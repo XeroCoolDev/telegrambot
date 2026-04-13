@@ -665,13 +665,6 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
 
-    const enabledResellers = new Set(
-      (process.env.CUSTOMER_ENABLED_RESELLERS || "").split(",").map((s) => s.trim()).filter(Boolean)
-    );
-    if (enabledResellers.size > 0 && !enabledResellers.has(xuiUserId)) {
-      return c.json({ error: "Customer sharing not enabled for your account" }, 403);
-    }
-
     const { lineId } = await c.req.json<{ lineId: string }>();
 
     // Verify line belongs to this reseller
