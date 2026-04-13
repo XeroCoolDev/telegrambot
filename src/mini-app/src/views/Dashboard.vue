@@ -3,7 +3,7 @@ export default { name: "Dashboard" };
 </script>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, onActivated } from "vue";
 import { useRouter } from "vue-router";
 import { useStore } from "../composables/useStore";
 
@@ -13,6 +13,12 @@ const tg = window.Telegram.WebApp;
 const { user, subs, userLoading, subsLoading, loadUser, loadSubs } = useStore();
 loadUser();
 loadSubs();
+
+// Re-fetch when returning to this page (keep-alive reactivation)
+onActivated(() => {
+  loadUser();
+  loadSubs();
+});
 
 const loading = computed(() => userLoading.value || subsLoading.value);
 
@@ -102,10 +108,10 @@ function tapLine(id: string) {
       </div>
     </template>
 
-    <template v-else-if="user && !user.linked">
+    <template v-else-if="!user || !user.linked">
       <div class="empty-state">
         <div class="icon">🔗</div>
-        <p>Your account isn't linked yet.<br />Please contact an administrator with your Telegram ID.</p>
+        <p>Your account isn't linked yet.<br />Please contact an administrator to get started.</p>
       </div>
     </template>
 
