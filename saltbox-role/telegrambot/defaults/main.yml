@@ -1,0 +1,140 @@
+---
+################################
+# Basics
+################################
+
+telegrambot_name: telegrambot
+
+################################
+# Paths
+################################
+
+telegrambot_paths_folder: "{{ telegrambot_name }}"
+telegrambot_paths_location: "{{ server_appdata_path }}/{{ telegrambot_paths_folder }}"
+telegrambot_paths_folders_list:
+  - "{{ telegrambot_paths_location }}"
+  - "{{ telegrambot_paths_location }}/data"
+
+################################
+# Web
+################################
+
+telegrambot_web_subdomain: "{{ telegrambot_name }}"
+telegrambot_web_domain: "{{ user.domain }}"
+telegrambot_web_url: "{{ 'https://' + (telegrambot_web_subdomain + '.' + telegrambot_web_domain
+  if (telegrambot_web_subdomain | length > 0)
+  else telegrambot_web_domain) }}"
+
+################################
+# DNS
+################################
+
+telegrambot_dns_record: "{{ telegrambot_web_subdomain }}"
+telegrambot_dns_zone: "{{ telegrambot_web_domain }}"
+telegrambot_dns_proxy: "{{ dns.proxied }}"
+
+################################
+# Traefik
+################################
+
+telegrambot_traefik_sso_middleware: ""
+telegrambot_traefik_middleware_default: "{{ traefik_default_middleware }}"
+telegrambot_traefik_middleware_custom: ""
+telegrambot_traefik_certresolver: "{{ traefik_default_certresolver }}"
+telegrambot_traefik_enabled: true
+telegrambot_traefik_api_enabled: false
+telegrambot_traefik_api_endpoint: ""
+
+################################
+# Docker
+################################
+
+# Container
+telegrambot_docker_container: "{{ telegrambot_name }}"
+
+# Image — override to use a pre-built image from GHCR
+telegrambot_docker_image_pull: false
+telegrambot_docker_image_tag: "latest"
+telegrambot_docker_image: ""
+
+# Build from source
+telegrambot_docker_build: true
+telegrambot_docker_build_repo: "git@github.com:L8onJones/xero-cool-telegram-bot-mini-app.git"
+telegrambot_docker_build_branch: "main"
+
+# Ports
+telegrambot_docker_ports_defaults: []
+telegrambot_docker_ports_custom: []
+telegrambot_docker_ports: "{{ telegrambot_docker_ports_defaults
+  + telegrambot_docker_ports_custom }}"
+
+# Envs
+telegrambot_docker_envs_default:
+  TZ: "{{ tz }}"
+  BOT_TOKEN: ""
+  WEBAPP_URL: "{{ telegrambot_web_url }}"
+  ADMIN_TELEGRAM_IDS: ""
+  ADMIN_CHAT_ID: ""
+  XUI_ADMIN_API_URL: ""
+  XUI_ADMIN_API_KEY: ""
+  XUI_RESELLER_API_URL: ""
+  BTCPAY_URL: ""
+  BTCPAY_API_KEY: ""
+  BTCPAY_STORE_ID: ""
+  BTCPAY_POS_APP_ID: ""
+  BTCPAY_WEBHOOK_SECRET: ""
+  DATABASE_PATH: "/app/data/bot.db"
+  API_TIMEOUT_MS: "10000"
+  REMINDER_CRON: "0 9 * * *"
+  EXPIRY_REMINDER_DAYS: "1"
+  TOPUP_REMINDER_DAYS: "30"
+  ADULT_BOUQUET_IDS: ""
+  CONN_PRICE_1_2: "4,2"
+  CONN_PRICE_1_3: "7,4"
+  CONN_PRICE_2_3: "3,2"
+  MAX_CONNECTIONS: "3"
+  CONN_DISCOUNT_MONTHS: "6"
+  CONN_MULTIPLIER_MONTHS: "12"
+  EXTEND_CONN_LOCK_DAYS: "30"
+  RATE_LIMIT_MAX: "30"
+  RATE_LIMIT_WINDOW_MS: "60000"
+  CUSTOMER_BOT_TOKEN: ""
+  CUSTOMER_BOT_USERNAME: ""
+  CUSTOMER_WEBAPP_URL: ""
+  CUSTOMER_ENABLED_RESELLERS: ""
+  SUPPORT_FORUM_CHAT_ID: ""
+  ADMIN_DASHBOARD_TOKEN: ""
+telegrambot_docker_envs_custom: {}
+telegrambot_docker_envs: "{{ telegrambot_docker_envs_default
+  | combine(telegrambot_docker_envs_custom) }}"
+
+# Volumes
+telegrambot_docker_volumes_default:
+  - "{{ telegrambot_paths_location }}/data:/app/data"
+telegrambot_docker_volumes_custom: []
+telegrambot_docker_volumes: "{{ telegrambot_docker_volumes_default
+  + telegrambot_docker_volumes_custom }}"
+
+# Labels
+telegrambot_docker_labels_default: {}
+telegrambot_docker_labels_custom: {}
+telegrambot_docker_labels: "{{ docker_labels_common
+  | combine(telegrambot_docker_labels_default)
+  | combine(telegrambot_docker_labels_custom) }}"
+
+# Hostname
+telegrambot_docker_hostname: "{{ telegrambot_name }}"
+
+# Networks
+telegrambot_docker_networks_alias: "{{ telegrambot_name }}"
+telegrambot_docker_networks_default: []
+telegrambot_docker_networks_custom: []
+telegrambot_docker_networks: "{{ docker_networks_common
+  + telegrambot_docker_networks_default
+  + telegrambot_docker_networks_custom }}"
+
+# Restart Policy
+telegrambot_docker_restart_policy: unless-stopped
+
+# State
+telegrambot_docker_state: started

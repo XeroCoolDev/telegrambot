@@ -643,6 +643,71 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
     return c.json({ token, link: botUsername ? `https://t.me/${botUsername}?start=${token}` : token });
   });
 
+  // ── Admin dashboard ───────────────────────────────
+  const ADMIN_TOKEN = process.env.ADMIN_DASHBOARD_TOKEN || "";
+
+  app.get("/admin", async (c) => {
+    const token = c.req.query("token");
+    if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const users = db.db.prepare("SELECT telegram_id, username, first_name, xui_user_id, created_at FROM users ORDER BY created_at DESC").all() as DbUser[];
+    const payments = db.db.prepare("SELECT btcpay_invoice_id, telegram_id, credits, amount, currency, item_title, status, created_at FROM payments ORDER BY created_at DESC LIMIT 50").all() as DbPayment[];
+    const customers = db.db.prepare("SELECT c.telegram_id, c.username, c.first_name, c.created_at FROM customers c ORDER BY c.created_at DESC").all() as any[];
+    const customerLines = db.db.prepare("SELECT cl.xui_line_id, cl.customer_telegram_id, cl.reseller_xui_user_id, cl.notes, cl.created_at, c.username as customer_username FROM customer_lines cl LEFT JOIN customers c ON cl.customer_telegram_id = c.telegram_id ORDER BY cl.created_at DESC").all() as any[];
+
+    const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 16px; background: #0d1117; color: #c9d1d9; }
+  h1 { font-size: 20px; color: #58a6ff; }
+  h2 { font-size: 16px; color: #8b949e; margin-top: 24px; border-bottom: 1px solid #21262d; padding-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  th { text-align: left; color: #8b949e; padding: 6px 8px; border-bottom: 1px solid #21262d; }
+  td { padding: 6px 8px; border-bottom: 1px solid #161b22; }
+  tr:hover { background: #161b22; }
+  .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .settled { background: #1b4332; color: #52c41a; }
+  .pending { background: #3b2e00; color: #faad14; }
+  .expired { background: #3b1111; color: #ff4d4f; }
+  .failed { background: #3b1111; color: #ff4d4f; }
+  .count { color: #8b949e; font-weight: normal; }
+</style>
+</head><body>
+<h1>Telegram Bot Admin</h1>
+
+<h2>Reseller Users <span class="count">(${users.length})</span></h2>
+<table>
+<tr><th>Telegram ID</th><th>Username</th><th>Name</th><th>XUI ID</th><th>Joined</th></tr>
+${users.map(u => `<tr><td>${u.telegram_id}</td><td>${u.username || "—"}</td><td>${u.first_name || "—"}</td><td>${u.xui_user_id || "—"}</td><td>${u.created_at}</td></tr>`).join("")}
+</table>
+
+<h2>Payments <span class="count">(last 50)</span></h2>
+<table>
+<tr><th>Invoice</th><th>User</th><th>Credits</th><th>Amount</th><th>Status</th><th>Date</th></tr>
+${payments.map(p => `<tr><td style="font-family:monospace;font-size:11px">${p.btcpay_invoice_id}</td><td>${p.telegram_id}</td><td>${p.credits}</td><td>${p.amount} ${p.currency}</td><td><span class="badge ${p.status}">${p.status}</span></td><td>${p.created_at}</td></tr>`).join("")}
+</table>
+
+<h2>Customers <span class="count">(${customers.length})</span></h2>
+<table>
+<tr><th>Telegram ID</th><th>Username</th><th>Name</th><th>Joined</th></tr>
+${customers.map(c => `<tr><td>${c.telegram_id}</td><td>${c.username || "—"}</td><td>${c.first_name || "—"}</td><td>${c.created_at}</td></tr>`).join("")}
+</table>
+
+<h2>Customer Lines <span class="count">(${customerLines.length})</span></h2>
+<table>
+<tr><th>Line ID</th><th>Customer</th><th>Reseller XUI ID</th><th>Notes</th><th>Linked</th></tr>
+${customerLines.map(cl => `<tr><td>${cl.xui_line_id}</td><td>${cl.customer_username || cl.customer_telegram_id || "unlinked"}</td><td>${cl.reseller_xui_user_id}</td><td>${cl.notes || "—"}</td><td>${cl.created_at}</td></tr>`).join("")}
+</table>
+
+</body></html>`;
+
+    return c.html(html);
+  });
+
   // ── Mount ─────────────────────────────────────────
   app.use("/api/*", cors());
   app.route("/api", api);
