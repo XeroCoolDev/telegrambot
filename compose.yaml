@@ -1,0 +1,35 @@
+services:
+  telegrambot:
+    restart: unless-stopped
+    container_name: telegrambot
+    build: .
+    hostname: telegrambot
+    env_file: .env
+    environment:
+      - TRAEFIK_HOST=${TRAEFIK_HOST:-telegrambot.vodpanel.xyz}
+    networks:
+      - saltbox
+    labels:
+      com.github.saltbox.saltbox_managed: true
+      diun.enable: true
+      traefik.enable: true
+      # HTTP → HTTPS redirect
+      traefik.http.routers.telegrambot-http.entrypoints: web
+      traefik.http.routers.telegrambot-http.middlewares: globalHeaders@file,redirect-to-https@docker,robotHeaders@file,cloudflarewarp@docker
+      traefik.http.routers.telegrambot-http.rule: Host(`${TRAEFIK_HOST}`)
+      traefik.http.routers.telegrambot-http.service: telegrambot
+      # HTTPS (no authelia — Telegram users auth via initData)
+      traefik.http.routers.telegrambot.entrypoints: websecure
+      traefik.http.routers.telegrambot.middlewares: globalHeaders@file,secureHeaders@file,robotHeaders@file,cloudflarewarp@docker
+      traefik.http.routers.telegrambot.rule: Host(`${TRAEFIK_HOST}`)
+      traefik.http.routers.telegrambot.service: telegrambot
+      traefik.http.routers.telegrambot.tls.certresolver: cfdns
+      traefik.http.routers.telegrambot.tls.options: securetls@file
+      traefik.http.services.telegrambot.loadbalancer.server.port: 3000
+    volumes:
+      - /opt/telegrambot/data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+
+networks:
+  saltbox:
+    external: true

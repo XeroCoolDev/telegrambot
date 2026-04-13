@@ -1,0 +1,10 @@
+node_modules
+src/mini-app/node_modules
+src/customer-app/node_modules
+dist
+data
+.env
+*.db
+*.db-shm
+*.db-wal
+.claude
