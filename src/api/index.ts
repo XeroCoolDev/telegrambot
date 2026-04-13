@@ -17,6 +17,10 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
   // ── Authenticated API routes ──────────────────────
   const api = new Hono<Env>();
 
+  const ADMIN_IDS_MIDDLEWARE = new Set(
+    (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((s) => Number(s.trim())).filter(Boolean)
+  );
+
   api.use("/*", async (c, next) => {
     const initData = c.req.header("X-Telegram-Init-Data");
     if (!initData) return c.json({ error: "Unauthorized" }, 401);
@@ -28,7 +32,14 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
       return c.json({ error: "Too many requests" }, 429);
     }
 
-    const user = db.getUser.get(validated.user.id) as DbUser | undefined;
+    let user = db.getUser.get(validated.user.id) as DbUser | undefined;
+
+    // Auto-register admins if not in DB
+    if (!user && ADMIN_IDS_MIDDLEWARE.has(validated.user.id)) {
+      db.upsertUser.run(validated.user.id, validated.user.username || null, validated.user.first_name);
+      user = db.getUser.get(validated.user.id) as DbUser | undefined;
+    }
+
     if (!user) return c.json({ error: "Account not registered" }, 403);
 
     c.set("telegramId", validated.user.id);
@@ -39,21 +50,29 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
 
   // GET /api/me — user info + live credits via reseller API
   api.get("/me", async (c) => {
+    const tgId = c.get("telegramId");
     const xuiApiKey = c.get("xuiApiKey");
-    if (!xuiApiKey) return c.json({ linked: false });
+    const isAdmin = ADMIN_IDS_MIDDLEWARE.has(tgId);
+
+    if (!xuiApiKey) {
+      return c.json({
+        linked: false,
+        isAdmin,
+        config: {
+          maxConnections: Number(process.env.MAX_CONNECTIONS || 3),
+          extendConnLockDays: Number(process.env.EXTEND_CONN_LOCK_DAYS || 30),
+        },
+      });
+    }
 
     const xuiUser = await xui.getUserAsReseller(xuiApiKey);
     if (!xuiUser) return c.json({ error: "Failed to fetch XUI data" }, 502);
-
-    const ADMIN_IDS = new Set(
-      (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((s) => Number(s.trim())).filter(Boolean)
-    );
 
     return c.json({
       linked: true,
       credits: parseInt(xuiUser.credits, 10),
       xuiUsername: xuiUser.username,
-      isAdmin: ADMIN_IDS.has(c.get("telegramId")),
+      isAdmin,
       config: {
         maxConnections: Number(process.env.MAX_CONNECTIONS || 3),
         extendConnLockDays: Number(process.env.EXTEND_CONN_LOCK_DAYS || 30),
@@ -649,36 +668,33 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
   });
 
   // ── Admin API (reuses reseller auth, checks admin) ──
-  const ADMIN_IDS_SET = new Set(
-    (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((s) => Number(s.trim())).filter(Boolean)
-  );
 
   api.get("/admin/users", async (c) => {
-    if (!ADMIN_IDS_SET.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const users = db.db.prepare("SELECT telegram_id, username, first_name, xui_user_id, created_at FROM users ORDER BY created_at DESC").all();
     return c.json(users);
   });
 
   api.get("/admin/payments", async (c) => {
-    if (!ADMIN_IDS_SET.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const payments = db.db.prepare("SELECT btcpay_invoice_id, telegram_id, credits, amount, currency, item_title, status, created_at FROM payments ORDER BY created_at DESC LIMIT 100").all();
     return c.json(payments);
   });
 
   api.get("/admin/customers", async (c) => {
-    if (!ADMIN_IDS_SET.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const customers = db.db.prepare("SELECT c.telegram_id, c.username, c.first_name, c.created_at FROM customers c ORDER BY c.created_at DESC").all();
     return c.json(customers);
   });
 
   api.get("/admin/customer-lines", async (c) => {
-    if (!ADMIN_IDS_SET.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const lines = db.db.prepare("SELECT cl.xui_line_id, cl.customer_telegram_id, cl.reseller_xui_user_id, cl.notes, cl.created_at, c.username as customer_username FROM customer_lines cl LEFT JOIN customers c ON cl.customer_telegram_id = c.telegram_id ORDER BY cl.created_at DESC").all();
     return c.json(lines);
   });
 
   api.post("/admin/link", async (c) => {
-    if (!ADMIN_IDS_SET.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId, xuiUserId } = await c.req.json<{ telegramId: number; xuiUserId: string }>();
 
     const targetUser = db.getUser.get(telegramId) as DbUser | undefined;
@@ -692,7 +708,7 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
   });
 
   api.post("/admin/unlink", async (c) => {
-    if (!ADMIN_IDS_SET.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId } = await c.req.json<{ telegramId: number }>();
     db.linkXui.run(null, null, telegramId);
     return c.json({ success: true });

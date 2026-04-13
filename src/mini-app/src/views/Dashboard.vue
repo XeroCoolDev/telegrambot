@@ -109,6 +109,9 @@ function tapLine(id: string) {
     </template>
 
     <template v-else-if="!user || !user.linked">
+      <div v-if="user?.isAdmin" style="margin-bottom: 16px">
+        <button class="btn btn-secondary" @click="router.push('/admin')">Admin</button>
+      </div>
       <div class="empty-state">
         <div class="icon">🔗</div>
         <p>Your account isn't linked yet.<br />Please contact an administrator to get started.</p>
