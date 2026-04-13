@@ -7,7 +7,33 @@ export interface DbUser {
   first_name: string | null;
   xui_user_id: string | null;
   xui_api_key: string | null;
+  permissions: string | null;
   created_at: string;
+}
+
+export interface UserPermissions {
+  canCreateLine: boolean;
+  canDeleteLine: boolean;
+  canBuyCredits: boolean;
+  canToggleAdult: boolean;
+  canShareWithCustomers: boolean;
+}
+
+export const DEFAULT_PERMISSIONS: UserPermissions = {
+  canCreateLine: true,
+  canDeleteLine: true,
+  canBuyCredits: true,
+  canToggleAdult: true,
+  canShareWithCustomers: true,
+};
+
+export function parsePermissions(json: string | null): UserPermissions {
+  if (!json) return { ...DEFAULT_PERMISSIONS };
+  try {
+    return { ...DEFAULT_PERMISSIONS, ...JSON.parse(json) };
+  } catch {
+    return { ...DEFAULT_PERMISSIONS };
+  }
 }
 
 export interface DbPayment {
@@ -55,6 +81,7 @@ export function initDb(path: string) {
       first_name TEXT,
       xui_user_id TEXT,
       xui_api_key TEXT,
+      permissions TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS payments (
@@ -98,6 +125,9 @@ export function initDb(path: string) {
   if (!userCols.some((c) => c.name === "xui_api_key")) {
     db.exec("ALTER TABLE users ADD COLUMN xui_api_key TEXT");
   }
+  if (!userCols.some((c) => c.name === "permissions")) {
+    db.exec("ALTER TABLE users ADD COLUMN permissions TEXT");
+  }
 
   const clCols = db.prepare("PRAGMA table_info(customer_lines)").all() as { name: string }[];
   if (clCols.length > 0 && !clCols.some((c) => c.name === "notes")) {
@@ -121,6 +151,7 @@ export function initDb(path: string) {
         first_name = excluded.first_name
     `),
     linkXui: db.prepare("UPDATE users SET xui_user_id = ?, xui_api_key = ? WHERE telegram_id = ?"),
+    updatePermissions: db.prepare("UPDATE users SET permissions = ? WHERE telegram_id = ?"),
     getAllLinkedUsers: db.prepare("SELECT * FROM users WHERE xui_user_id IS NOT NULL"),
 
     // ── Payments ──

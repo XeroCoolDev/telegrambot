@@ -141,10 +141,10 @@ function tapLine(id: string) {
 
       <!-- Actions -->
       <div style="display: flex; gap: 8px; margin-bottom: 16px">
-        <button class="btn btn-secondary" style="flex: 1" @click="router.push('/buy')">
+        <button v-if="user.permissions?.canBuyCredits !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/buy')">
           + Buy Credits
         </button>
-        <button class="btn btn-secondary" style="flex: 1" @click="router.push('/create')">
+        <button v-if="user.permissions?.canCreateLine !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/create')">
           + New Line
         </button>
         <button v-if="user.isAdmin" class="btn btn-secondary" style="flex: 1" @click="router.push('/admin')">

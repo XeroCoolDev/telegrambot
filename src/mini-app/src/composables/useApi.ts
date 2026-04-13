@@ -25,11 +25,20 @@ async function request<T>(
 
 // ── Typed API methods ───────────────────────────────────
 
+export interface Permissions {
+  canCreateLine: boolean;
+  canDeleteLine: boolean;
+  canBuyCredits: boolean;
+  canToggleAdult: boolean;
+  canShareWithCustomers: boolean;
+}
+
 export interface UserInfo {
   linked: boolean;
   credits?: number;
   xuiUsername?: string;
   isAdmin?: boolean;
+  permissions?: Permissions;
   config?: {
     maxConnections: number;
     extendConnLockDays: number;
@@ -156,6 +165,11 @@ export const api = {
     request<{ success: boolean }>("/admin/unlink", {
       method: "POST",
       body: JSON.stringify({ telegramId }),
+    }),
+  adminSetPermissions: (telegramId: number, permissions: Permissions) =>
+    request<{ success: boolean }>("/admin/set-permissions", {
+      method: "POST",
+      body: JSON.stringify({ telegramId, permissions }),
     }),
 
   createLine: (packageId: string, resellerNotes?: string, contact?: string) =>

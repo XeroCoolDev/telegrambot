@@ -3,13 +3,14 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { cors } from "hono/cors";
 import type { Bot } from "grammy";
 import type { AppDb, DbUser, DbPayment, DbCustomerLine } from "../db/index.js";
+import { parsePermissions } from "../db/index.js";
 import { validateInitData } from "../services/telegram-auth.js";
 import { isRateLimited } from "../services/rate-limit.js";
 import * as xui from "../services/xui.js";
 import * as btcpay from "../services/btcpay.js";
 import { notifyPaymentSettled } from "../services/notifications.js";
 
-type Env = { Variables: { telegramId: number; xuiUserId: string; xuiApiKey: string } };
+type Env = { Variables: { telegramId: number; xuiUserId: string; xuiApiKey: string; permissions: string | null } };
 
 export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
   const app = new Hono();
@@ -45,8 +46,16 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
     c.set("telegramId", validated.user.id);
     c.set("xuiUserId", user.xui_user_id || "");
     c.set("xuiApiKey", user.xui_api_key || "");
+    c.set("permissions", user.permissions || null);
     await next();
   });
+
+  // Helper: check if context user has a permission, returns 403 if not
+  function requirePerm(c: any, perm: keyof ReturnType<typeof parsePermissions>) {
+    const perms = parsePermissions(c.get("permissions"));
+    if (!perms[perm]) return c.json({ error: "Permission denied" }, 403);
+    return null;
+  }
 
   // GET /api/me — user info + live credits via reseller API
   api.get("/me", async (c) => {
@@ -54,10 +63,13 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
     const xuiApiKey = c.get("xuiApiKey");
     const isAdmin = ADMIN_IDS_MIDDLEWARE.has(tgId);
 
+    const permissions = parsePermissions(c.get("permissions"));
+
     if (!xuiApiKey) {
       return c.json({
         linked: false,
         isAdmin,
+        permissions,
         config: {
           maxConnections: Number(process.env.MAX_CONNECTIONS || 3),
           extendConnLockDays: Number(process.env.EXTEND_CONN_LOCK_DAYS || 30),
@@ -73,6 +85,7 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
       credits: parseInt(xuiUser.credits, 10),
       xuiUsername: xuiUser.username,
       isAdmin,
+      permissions,
       config: {
         maxConnections: Number(process.env.MAX_CONNECTIONS || 3),
         extendConnLockDays: Number(process.env.EXTEND_CONN_LOCK_DAYS || 30),
@@ -179,6 +192,9 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
 
   // POST /api/buy-credits — create BTCPay invoice for a POS item
   api.post("/buy-credits", async (c) => {
+    const permErr = requirePerm(c, "canBuyCredits");
+    if (permErr) return permErr;
+
     const tgId = c.get("telegramId");
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
@@ -354,6 +370,9 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
 
   // POST /api/lines/delete — delete a line
   api.post("/lines/delete", async (c) => {
+    const permErr = requirePerm(c, "canDeleteLine");
+    if (permErr) return permErr;
+
     const xuiApiKey = c.get("xuiApiKey");
     if (!xuiApiKey) return c.json({ error: "Account not linked" }, 400);
 
@@ -391,6 +410,9 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
 
   // POST /api/lines/toggle-adult — enable/disable adult bouquets on a line
   api.post("/lines/toggle-adult", async (c) => {
+    const permErr = requirePerm(c, "canToggleAdult");
+    if (permErr) return permErr;
+
     const xuiApiKey = c.get("xuiApiKey");
     if (!xuiApiKey) return c.json({ error: "Account not linked" }, 400);
 
@@ -407,6 +429,9 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
 
   // POST /api/lines/create — create a new line using credits (via xui.one)
   api.post("/lines/create", async (c) => {
+    const permErr = requirePerm(c, "canCreateLine");
+    if (permErr) return permErr;
+
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
 
@@ -634,6 +659,9 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
 
   // POST /customer/generate-token — reseller generates a share link for a line
   api.post("/customer/generate-token", async (c) => {
+    const permErr = requirePerm(c, "canShareWithCustomers");
+    if (permErr) return permErr;
+
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
 
@@ -671,8 +699,8 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
 
   api.get("/admin/users", async (c) => {
     if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
-    const users = db.db.prepare("SELECT telegram_id, username, first_name, xui_user_id, created_at FROM users ORDER BY created_at DESC").all();
-    return c.json(users);
+    const users = db.db.prepare("SELECT telegram_id, username, first_name, xui_user_id, permissions, created_at FROM users ORDER BY created_at DESC").all() as any[];
+    return c.json(users.map((u) => ({ ...u, permissions: parsePermissions(u.permissions) })));
   });
 
   api.get("/admin/payments", async (c) => {
@@ -711,6 +739,13 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
     if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId } = await c.req.json<{ telegramId: number }>();
     db.linkXui.run(null, null, telegramId);
+    return c.json({ success: true });
+  });
+
+  api.post("/admin/set-permissions", async (c) => {
+    if (!ADMIN_IDS_MIDDLEWARE.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    const { telegramId, permissions } = await c.req.json<{ telegramId: number; permissions: Record<string, boolean> }>();
+    db.updatePermissions.run(JSON.stringify(permissions), telegramId);
     return c.json({ success: true });
   });
 

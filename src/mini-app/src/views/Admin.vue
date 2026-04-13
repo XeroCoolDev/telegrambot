@@ -47,6 +47,29 @@ async function unlinkUser(telegramId: number) {
     }
   });
 }
+
+// Expanded permission editor
+const expandedUser = ref<number | null>(null);
+
+async function togglePerm(user: any, key: string) {
+  const newPerms = { ...user.permissions, [key]: !user.permissions[key] };
+  user.permissions = newPerms;
+  try {
+    await api.adminSetPermissions(user.telegram_id, newPerms);
+    tg.HapticFeedback.notificationOccurred("success");
+  } catch {
+    tg.HapticFeedback.notificationOccurred("error");
+    refreshUsers();
+  }
+}
+
+const permLabels: Record<string, string> = {
+  canCreateLine: "Create lines",
+  canDeleteLine: "Delete lines",
+  canBuyCredits: "Buy credits",
+  canToggleAdult: "Toggle adult",
+  canShareWithCustomers: "Share with customers",
+};
 </script>
 
 <template>
@@ -82,14 +105,25 @@ async function unlinkUser(telegramId: number) {
           :key="u.telegram_id"
           class="card"
         >
-          <div class="card-row">
+          <div class="card-row" style="cursor: pointer" @click="expandedUser = expandedUser === u.telegram_id ? null : u.telegram_id">
             <div style="min-width: 0; flex: 1">
               <div style="font-weight: 600; font-size: 14px">{{ u.username || u.first_name || 'Unknown' }}</div>
               <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
                 TG: {{ u.telegram_id }} · XUI: {{ u.xui_user_id || 'unlinked' }}
               </div>
             </div>
-            <button v-if="u.xui_user_id" class="unlink-btn" @click="unlinkUser(u.telegram_id)">Unlink</button>
+            <button v-if="u.xui_user_id" class="unlink-btn" @click.stop="unlinkUser(u.telegram_id)">Unlink</button>
+          </div>
+
+          <!-- Permissions (expanded) -->
+          <div v-if="expandedUser === u.telegram_id" class="perms-panel">
+            <div v-for="(label, key) in permLabels" :key="key" class="perm-row" @click="togglePerm(u, key)">
+              <span class="perm-label">{{ label }}</span>
+              <label class="toggle-mini" @click.stop>
+                <input type="checkbox" :checked="u.permissions[key]" @change="togglePerm(u, key)" />
+                <span class="toggle-mini-slider"></span>
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -217,4 +251,56 @@ async function unlinkUser(telegramId: number) {
 .status-pill.pending { background: #3b2e00; color: #faad14; }
 .status-pill.expired { background: #3b1111; color: #ff4d4f; }
 .status-pill.failed { background: #3b1111; color: #ff4d4f; }
+
+.perms-panel {
+  padding: 4px 16px 12px;
+  border-top: 1px solid var(--tg-secondary-bg);
+}
+.perm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.perm-label {
+  font-size: 13px;
+  color: var(--tg-text);
+}
+.toggle-mini {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+.toggle-mini input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-mini-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--tg-hint);
+  border-radius: 20px;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+.toggle-mini-slider::before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle-mini input:checked + .toggle-mini-slider {
+  background: var(--tg-btn);
+}
+.toggle-mini input:checked + .toggle-mini-slider::before {
+  transform: translateX(16px);
+}
 </style>

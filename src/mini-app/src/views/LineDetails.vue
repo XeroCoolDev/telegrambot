@@ -309,7 +309,7 @@ function statusLabel(sub: any) {
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div class="card-row" style="cursor: pointer" @click="toggleAdult">
+        <div v-if="user?.permissions?.canToggleAdult !== false" class="card-row" style="cursor: pointer" @click="toggleAdult">
           <div>
             <span class="card-label">Adult Content</span>
             <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
@@ -329,7 +329,7 @@ function statusLabel(sub: any) {
       </div>
 
       <!-- Share with customer -->
-      <div class="card" style="margin-top: 12px">
+      <div v-if="user?.permissions?.canShareWithCustomers !== false" class="card" style="margin-top: 12px">
         <div v-if="!shareLink" class="card-row">
           <span class="card-label">Customer Link</span>
           <button class="btn-edit" @click="generateShareLink" :disabled="sharing">
@@ -359,7 +359,7 @@ function statusLabel(sub: any) {
         </button>
       </div>
 
-      <button class="btn-delete" @click="openDeleteModal">
+      <button v-if="user?.permissions?.canDeleteLine !== false" class="btn-delete" @click="openDeleteModal">
         Delete Line
       </button>
     </template>
