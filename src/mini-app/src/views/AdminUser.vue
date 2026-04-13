@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api, useAsync, type Permissions } from "../composables/useApi";
 
@@ -12,13 +12,11 @@ const user = computed(() => users.value?.find((u: any) => String(u.telegram_id) 
 const permissions = ref<Permissions | null>(null);
 const saving = ref(false);
 
-// Initialise local permissions from user data
-const unwatch = computed(() => {
-  if (user.value && !permissions.value) {
-    permissions.value = { ...user.value.permissions };
+watch(user, (u) => {
+  if (u && !permissions.value) {
+    permissions.value = { ...u.permissions };
   }
-  return user.value;
-});
+}, { immediate: true });
 
 const permGroups: { title: string; items: { key: keyof Permissions; label: string; description: string }[] }[] = [
   {
