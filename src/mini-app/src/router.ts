@@ -36,5 +36,10 @@ export const router = createRouter({
       name: "create-line",
       component: () => import("./views/CreateLine.vue"),
     },
+    {
+      path: "/admin",
+      name: "admin",
+      component: () => import("./views/Admin.vue"),
+    },
   ],
 });

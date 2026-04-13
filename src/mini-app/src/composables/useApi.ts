@@ -29,6 +29,7 @@ export interface UserInfo {
   linked: boolean;
   credits?: number;
   xuiUsername?: string;
+  isAdmin?: boolean;
   config?: {
     maxConnections: number;
     extendConnLockDays: number;
@@ -139,6 +140,22 @@ export const api = {
     request<{ success: boolean }>("/lines/extend", {
       method: "POST",
       body: JSON.stringify({ lineId, packageId }),
+    }),
+
+  // Admin
+  adminGetUsers: () => request<any[]>("/admin/users"),
+  adminGetPayments: () => request<any[]>("/admin/payments"),
+  adminGetCustomers: () => request<any[]>("/admin/customers"),
+  adminGetCustomerLines: () => request<any[]>("/admin/customer-lines"),
+  adminLink: (telegramId: number, xuiUserId: string) =>
+    request<{ success: boolean; username: string }>("/admin/link", {
+      method: "POST",
+      body: JSON.stringify({ telegramId, xuiUserId }),
+    }),
+  adminUnlink: (telegramId: number) =>
+    request<{ success: boolean }>("/admin/unlink", {
+      method: "POST",
+      body: JSON.stringify({ telegramId }),
     }),
 
   createLine: (packageId: string, resellerNotes?: string, contact?: string) =>

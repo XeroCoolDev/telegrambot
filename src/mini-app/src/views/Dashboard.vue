@@ -144,6 +144,9 @@ function tapLine(id: string) {
         <button class="btn btn-secondary" style="flex: 1" @click="router.push('/create')">
           + New Line
         </button>
+        <button v-if="user.isAdmin" class="btn btn-secondary" style="flex: 1" @click="router.push('/admin')">
+          Admin
+        </button>
       </div>
 
       <!-- Subscriptions -->
