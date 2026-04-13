@@ -12,7 +12,7 @@ export default defineConfig({
     port: 5174,
     allowedHosts: true,
     proxy: {
-      "/customer": "http://localhost:3000",
+      "/customer": "http://localhost:" + (process.env.PORT || "3000"),
     },
   },
 });

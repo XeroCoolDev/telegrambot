@@ -5,7 +5,7 @@ import { createApp } from "./api/index.js";
 import { startScheduler } from "./scheduler/index.js";
 import { initDb } from "./db/index.js";
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 async function main() {
   const db = initDb(process.env.DATABASE_PATH || "./data/bot.db");
