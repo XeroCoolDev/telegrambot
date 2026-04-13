@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onActivated } from "vue";
+import { useRouter } from "vue-router";
 import { api, useAsync } from "../composables/useApi";
 
+const router = useRouter();
 const tg = window.Telegram.WebApp;
 
 const tab = ref<"users" | "payments" | "customers">("users");
 const { data: users, refresh: refreshUsers } = useAsync(() => api.adminGetUsers());
+onActivated(() => refreshUsers());
 const { data: payments } = useAsync(() => api.adminGetPayments());
 const { data: customers } = useAsync(() => api.adminGetCustomers());
 const { data: customerLines } = useAsync(() => api.adminGetCustomerLines());
@@ -35,41 +38,10 @@ async function linkUser() {
   }
 }
 
-async function unlinkUser(telegramId: number) {
-  tg.showConfirm(`Unlink user ${telegramId}?`, async (ok) => {
-    if (!ok) return;
-    try {
-      await api.adminUnlink(telegramId);
-      refreshUsers();
-      tg.HapticFeedback.notificationOccurred("success");
-    } catch {
-      tg.HapticFeedback.notificationOccurred("error");
-    }
-  });
+function openUser(telegramId: number) {
+  tg.HapticFeedback.selectionChanged();
+  router.push(`/admin/user/${telegramId}`);
 }
-
-// Expanded permission editor
-const expandedUser = ref<number | null>(null);
-
-async function togglePerm(user: any, key: string) {
-  const newPerms = { ...user.permissions, [key]: !user.permissions[key] };
-  user.permissions = newPerms;
-  try {
-    await api.adminSetPermissions(user.telegram_id, newPerms);
-    tg.HapticFeedback.notificationOccurred("success");
-  } catch {
-    tg.HapticFeedback.notificationOccurred("error");
-    refreshUsers();
-  }
-}
-
-const permLabels: Record<string, string> = {
-  canCreateLine: "Create lines",
-  canDeleteLine: "Delete lines",
-  canBuyCredits: "Buy credits",
-  canToggleAdult: "Toggle adult",
-  canShareWithCustomers: "Share with customers",
-};
 </script>
 
 <template>
@@ -104,26 +76,17 @@ const permLabels: Record<string, string> = {
           v-for="u in users"
           :key="u.telegram_id"
           class="card"
+          style="cursor: pointer"
+          @click="openUser(u.telegram_id)"
         >
-          <div class="card-row" style="cursor: pointer" @click="expandedUser = expandedUser === u.telegram_id ? null : u.telegram_id">
+          <div class="card-row">
             <div style="min-width: 0; flex: 1">
               <div style="font-weight: 600; font-size: 14px">{{ u.username || u.first_name || 'Unknown' }}</div>
               <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
                 TG: {{ u.telegram_id }} · XUI: {{ u.xui_user_id || 'unlinked' }}
               </div>
             </div>
-            <button v-if="u.xui_user_id" class="unlink-btn" @click.stop="unlinkUser(u.telegram_id)">Unlink</button>
-          </div>
-
-          <!-- Permissions (expanded) -->
-          <div v-if="expandedUser === u.telegram_id" class="perms-panel">
-            <div v-for="(label, key) in permLabels" :key="key" class="perm-row" @click="togglePerm(u, key)">
-              <span class="perm-label">{{ label }}</span>
-              <label class="toggle-mini" @click.stop>
-                <input type="checkbox" :checked="u.permissions[key]" @change="togglePerm(u, key)" />
-                <span class="toggle-mini-slider"></span>
-              </label>
-            </div>
+            <span style="font-size: 18px; color: var(--tg-hint)">›</span>
           </div>
         </div>
       </div>
@@ -231,15 +194,6 @@ const permLabels: Record<string, string> = {
   white-space: nowrap;
 }
 .admin-btn:disabled { opacity: 0.4; }
-.unlink-btn {
-  background: none;
-  border: none;
-  color: var(--tg-destructive, #ff3b30);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 4px 8px;
-}
 .status-pill {
   font-size: 11px;
   font-weight: 600;
@@ -252,55 +206,4 @@ const permLabels: Record<string, string> = {
 .status-pill.expired { background: #3b1111; color: #ff4d4f; }
 .status-pill.failed { background: #3b1111; color: #ff4d4f; }
 
-.perms-panel {
-  padding: 4px 16px 12px;
-  border-top: 1px solid var(--tg-secondary-bg);
-}
-.perm-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  cursor: pointer;
-}
-.perm-label {
-  font-size: 13px;
-  color: var(--tg-text);
-}
-.toggle-mini {
-  position: relative;
-  display: inline-block;
-  width: 36px;
-  height: 20px;
-}
-.toggle-mini input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.toggle-mini-slider {
-  position: absolute;
-  inset: 0;
-  background: var(--tg-hint);
-  border-radius: 20px;
-  transition: background 0.2s;
-  cursor: pointer;
-}
-.toggle-mini-slider::before {
-  content: "";
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  left: 3px;
-  bottom: 3px;
-  background: white;
-  border-radius: 50%;
-  transition: transform 0.2s;
-}
-.toggle-mini input:checked + .toggle-mini-slider {
-  background: var(--tg-btn);
-}
-.toggle-mini input:checked + .toggle-mini-slider::before {
-  transform: translateX(16px);
-}
 </style>
