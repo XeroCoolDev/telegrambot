@@ -103,7 +103,6 @@ telegrambot_docker_envs_default:
   CUSTOMER_WEBAPP_URL: ""
   CUSTOMER_ENABLED_RESELLERS: ""
   SUPPORT_FORUM_CHAT_ID: ""
-  ADMIN_DASHBOARD_TOKEN: ""
 telegrambot_docker_envs_custom: {}
 telegrambot_docker_envs: "{{ telegrambot_docker_envs_default
   | combine(telegrambot_docker_envs_custom) }}"
