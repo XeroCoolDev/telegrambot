@@ -140,6 +140,7 @@ async function saveInfo() {
     line.value.contact = editContact.value || null;
     line.value.resellerNotes = editNotes.value || null;
     editing.value = false;
+    invalidateSubs();
     tg.HapticFeedback.notificationOccurred("success");
   } catch (e: any) {
     tg.HapticFeedback.notificationOccurred("error");
