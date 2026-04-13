@@ -1,165 +1,93 @@
 # Telegram Bot + Mini App — xui.one Manager
 
-Telegram bot with an embedded Vue 3 mini app for managing xui.one subscriptions and purchasing credits via BTCPay. Runs on Saltbox behind Traefik.
+Telegram bot and mini app for managing xui.one IPTV subscriptions with BTCPay Bitcoin payments.
 
-## Architecture
+## Features
 
-```
-┌─ Docker container (telegrambot) ─────────────────────────┐
-│                                                           │
-│  Bot (grammY)          API (Hono :3000)                   │
-│  ├─ /start             ├─ GET  /api/me                    │
-│  ├─ /credits           ├─ GET  /api/subscriptions         │
-│  ├─ /status            ├─ GET  /api/packages              │
-│  ├─ /link (admin)      ├─ GET  /api/credit-options        │
-│  └─ daily reminders    ├─ POST /api/buy-credits           │
-│     (node-cron)        ├─ POST /api/lines/extend          │
-│                        ├─ POST /api/lines/create          │
-│                        ├─ POST /webhooks/btcpay           │
-│                        └─ /*   → Vue SPA (mini app)       │
-│                                                           │
-│  SQLite (better-sqlite3)                                  │
-│  ├─ users: telegram_id ↔ xui_user_id mapping              │
-│  └─ payments: BTCPay invoice tracking                     │
-│                                                           │
-└──── Traefik → telegrambot.yourdomain.tld ─────────────────┘
-         │                    │
-    XUI Admin API        BTCPay Server
-    XUI Reseller API     (POS app for credit packages)
-```
+### Reseller Bot
+- **Line management** — create, extend, enable/disable, delete lines
+- **Credit system** — buy credits via BTCPay (Bitcoin), spend on lines
+- **Connection upgrades** — dynamic pricing with discount/multiplier logic
+- **Adult content toggle** — per-line bouquet control
+- **Expiry reminders** — daily notifications for expiring lines
+- **Search & filter** — paginated line list with status filtering
+- **Admin panel** — manage users, view payments, link/unlink accounts
 
-## User Flow
+### Customer Bot (optional)
+- **Deep-link sharing** — resellers generate links for customers
+- **Customer mini app** — view connection details, server DNS, credentials
+- **Customer notes** — per-line notes for multi-device customers
+- **Adult toggle** — customers can manage their own content
+- **Forum support** — threaded support via Telegram forum topics
 
-1. User sends `/start` → gets their Telegram ID → admin links via `/link <tg_id> <xui_id>`
-2. Linked user sends `/start` → sees "Open Dashboard" WebApp button
-3. Mini app opens → authenticated via Telegram `initData` (HMAC-SHA256)
-4. **Dashboard** shows live credit balance + active lines from xui.one
-5. **Buy Credits** → selects from BTCPay POS items → invoice created → pays
-6. BTCPay webhook fires `InvoiceSettled` → `adjustCredits` on xui.one → bot confirms
-7. **Extend/Create Line** → spends credits via xui.one reseller+admin hybrid API
-8. **Daily reminders** → scheduler queries xui.one for expiring lines → sends at 7, 3, 1 days
+## Stack
+- **Server**: Node.js + TypeScript, grammY, Hono, better-sqlite3, node-cron
+- **Mini App**: Vue 3 + Vite SPA
+- **Payments**: BTCPay Server
+- **Deployment**: Docker on Saltbox behind Traefik
 
-## Mini App Views
+## Local Development
 
-| Route | View | Purpose |
-|---|---|---|
-| `/` | Dashboard | Credit balance, active lines list |
-| `/buy` | BuyCredits | BTCPay POS items → create invoice |
-| `/line/:id` | LineDetails | Line info, expiry, connections |
-| `/extend/:lineId` | ExtendLine | Select package to extend |
-| `/create` | CreateLine | Select package to create new line |
+### Prerequisites
+- Node 22 (pinned in `.nvmrc`)
+- pnpm
 
-## XUI API
-
-Uses query-string `action` params, not REST paths:
-
-| Action | API | Endpoint |
-|---|---|---|
-| `get_user` | Admin | `?api_key=X&action=get_user&id=Y` |
-| `get_line` | Admin | `?api_key=X&action=get_line&id=Y` |
-| `get_lines` | Admin | `?api_key=X&action=get_lines&id=Y` |
-| `get_packages` | Admin | `?api_key=X&action=get_packages` |
-| `adjust_credits` | Admin | `?api_key=X&action=adjust_credits&id=Y&credits=N&reason=...` |
-| `edit_line` | Admin | `?api_key=X&action=edit_line&id=Y&...` |
-| `create_line` | Reseller | `?api_key=USER_KEY&action=create_line&package=Z` |
-| `edit_line` | Reseller | `?api_key=USER_KEY&action=edit_line&id=Y&package=Z` |
-
-**Line extension uses a hybrid flow**: reseller API applies the package (deducts credits), then admin API sets the actual expiry and max_connections.
-
-Response format: `{ status: "STATUS_SUCCESS", data: {...} }` (except `get_packages` which returns a raw array).
-
-## BTCPay
-
-Credit packages come from a **POS app**, not xui.one:
-
-- `GET /api/v1/apps/pos/{POS_APP_ID}` → items with title/price + currency
-- `POST /api/v1/stores/{STORE_ID}/invoices` → creates invoice with metadata `{ xuiUserId, credits }`
-- Webhook `InvoiceSettled` → extracts credits from payment record → calls `adjustCredits`
-
-Create a webhook in BTCPay pointing to:
-```
-https://telegrambot.yourdomain.tld/webhooks/btcpay
-```
-Events: `InvoiceSettled`, `InvoiceExpired`
-
-## Setup on Saltbox
-
+### Setup
 ```bash
-# 1. Create app directory
-mkdir -p /opt/telegrambot/data
-
-# 2. Copy project files
-cp -r . /opt/telegrambot/
-
-# 3. Configure
-cp .env.example /opt/telegrambot/.env
-nano /opt/telegrambot/.env
-
-# 4. Update compose.yaml — replace yourdomain.tld with your actual domain
-
-# 5. Create DNS record
-# telegrambot.yourdomain.tld → server IP (or use Cloudflare wildcard)
-
-# 6. Deploy
-cd /opt/telegrambot
-docker compose up -d --build
-
-# 7. Check logs
-docker logs -f telegrambot
+pnpm install
+cd src/mini-app && pnpm install && cd ../..
+cp .env.example .env
+# Fill in your values
 ```
 
-## Admin Commands
-
-| Command | Description |
-|---|---|
-| `/link <telegram_id> <xui_user_id>` | Link a Telegram user to their xui.one account |
-
-## Development
-
+### Run
 ```bash
-# Server (watches src/)
-pnpm dev
-
-# Mini app (separate terminal)
-cd src/mini-app
-pnpm dev
+pnpm dev                          # Server + bot on :3000
+cd src/mini-app && pnpm dev       # Mini app on :5173 (separate terminal)
 ```
 
-The mini app dev server proxies `/api/*` to `localhost:3000` via Vite config.
+### Tunnel (for Telegram Mini App)
+```bash
+ngrok http 3000
+```
+Set the ngrok URL as `WEBAPP_URL` in `.env` and in BotFather's Menu Button.
+
+## Deployment (Saltbox)
+
+See [saltbox-telegrambot](https://github.com/XeroCoolDev/saltbox-telegrambot) for the Ansible role and deployment instructions.
+
+## Configuration
+
+See `.env.example` for all available environment variables.
 
 ## Project Structure
 
 ```
-telegrambot/
-├── compose.yaml              # Saltbox/Traefik docker compose
-├── Dockerfile                 # Multi-stage: mini-app build → server build → prod
-├── package.json               # Server dependencies
-├── tsconfig.json              # Server TypeScript config
-├── .env.example
-├── src/
-│   ├── index.ts               # Entry: boots db, bot, api, scheduler
-│   ├── db/index.ts            # SQLite schema + prepared statements
-│   ├── bot/index.ts           # grammY bot commands
-│   ├── api/index.ts           # Hono API routes + BTCPay webhook
-│   ├── scheduler/index.ts     # Daily expiry reminder cron
-│   ├── services/
-│   │   ├── xui.ts             # XUI admin + reseller API client
-│   │   ├── btcpay.ts          # BTCPay POS + invoice + webhook verification
-│   │   └── telegram-auth.ts   # initData HMAC-SHA256 validation
-│   └── mini-app/              # Vue 3 SPA (Vite)
-│       ├── package.json
-│       ├── vite.config.ts
-│       ├── index.html
-│       └── src/
-│           ├── main.ts
-│           ├── App.vue         # Shell: Telegram theme vars, back button, transitions
-│           ├── router.ts
-│           ├── composables/
-│           │   └── useApi.ts   # API client (sends initData header) + useAsync
-│           └── views/
-│               ├── Dashboard.vue
-│               ├── BuyCredits.vue
-│               ├── LineDetails.vue
-│               ├── ExtendLine.vue
-│               └── CreateLine.vue
+src/
+├── index.ts                 # Entry: boots db, bot, api, scheduler
+├── db/index.ts              # SQLite schema + prepared statements
+├── bot/
+│   ├── index.ts             # Reseller bot commands
+│   └── customer.ts          # Customer bot commands + support
+├── api/index.ts             # Hono API routes + webhooks + admin
+├── scheduler/index.ts       # Cron: expiry reminders, top-up reminders
+├── services/
+│   ├── xui.ts               # XUI admin + reseller API client
+│   ├── btcpay.ts            # BTCPay POS + invoices + webhook verification
+│   ├── telegram-auth.ts     # initData HMAC-SHA256 validation
+│   ├── notifications.ts     # Payment notifications (user + admin)
+│   └── rate-limit.ts        # In-memory rate limiter
+├── mini-app/                # Reseller Vue 3 SPA
+│   └── src/views/
+│       ├── Dashboard.vue    # Stats, search, filtered line list
+│       ├── LineDetails.vue  # Credentials, toggles, share, delete
+│       ├── ExtendLine.vue   # Package selection with downgrade warning
+│       ├── CreateLine.vue   # New line form with adult toggle
+│       ├── AddConnections.vue # Connection upgrade pricing
+│       ├── BuyCredits.vue   # BTCPay credit packages + pending invoices
+│       └── Admin.vue        # User management, payments, customers
+└── customer-app/            # Customer Vue 3 SPA
+    └── src/views/
+        ├── Dashboard.vue    # Line list with search + status filter
+        └── LineDetails.vue  # Connection details, notes, adult toggle
 ```
