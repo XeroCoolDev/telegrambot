@@ -14,9 +14,6 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       allowedHosts: true,
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-      },
       proxy: {
         "/api": `http://localhost:${apiPort}`,
       },
