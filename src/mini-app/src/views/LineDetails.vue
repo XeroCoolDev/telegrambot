@@ -177,6 +177,7 @@ async function toggleAdult() {
   try {
     await api.toggleAdult(line.value.id, newState);
     line.value.adultEnabled = newState;
+    invalidateSubs();
     tg.HapticFeedback.notificationOccurred(newState ? "success" : "warning");
   } catch (e: any) {
     tg.HapticFeedback.notificationOccurred("error");
