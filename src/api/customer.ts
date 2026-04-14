@@ -4,18 +4,22 @@ import { generateToken } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { validateInitData } from "../services/telegram-auth.js";
 import { isRateLimited } from "../services/rate-limit.js";
-import { requirePerm, type AuthEnv } from "./auth.js";
+import type { AuthEnv } from "./auth.js";
 
 export type CustomerEnv = { Variables: { customerTelegramId: number } };
 
 /** Register the /customer/generate-token endpoint on the reseller API (authenticated) */
 export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
   api.post("/customer/generate-token", async (c) => {
-    const permErr = requirePerm(c, "canShareWithCustomers");
-    if (permErr) return permErr;
-
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
+
+    const enabledResellers = new Set(
+      (process.env.CUSTOMER_ENABLED_RESELLERS || "").split(",").map((s) => s.trim()).filter(Boolean)
+    );
+    if (enabledResellers.size > 0 && !enabledResellers.has(xuiUserId)) {
+      return c.json({ error: "Customer sharing not enabled for your account" }, 403);
+    }
 
     const { lineId } = await c.req.json<{ lineId: string }>();
 

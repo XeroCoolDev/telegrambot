@@ -39,12 +39,6 @@ const permGroups: { title: string; items: { key: keyof Permissions; label: strin
       { key: "canToggleAdult", label: "Toggle adult content", description: "Allow this user to enable/disable adult bouquets" },
     ],
   },
-  {
-    title: "Customers",
-    items: [
-      { key: "canShareWithCustomers", label: "Share with customers", description: "Allow this user to generate customer share links" },
-    ],
-  },
 ];
 
 async function savePermissions() {

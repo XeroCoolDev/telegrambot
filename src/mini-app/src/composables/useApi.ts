@@ -30,7 +30,6 @@ export interface Permissions {
   canDeleteLine: boolean;
   canBuyCredits: boolean;
   canToggleAdult: boolean;
-  canShareWithCustomers: boolean;
 }
 
 export interface UserInfo {

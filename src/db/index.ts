@@ -16,7 +16,6 @@ export interface UserPermissions {
   canDeleteLine: boolean;
   canBuyCredits: boolean;
   canToggleAdult: boolean;
-  canShareWithCustomers: boolean;
 }
 
 export const DEFAULT_PERMISSIONS: UserPermissions = {
@@ -24,7 +23,6 @@ export const DEFAULT_PERMISSIONS: UserPermissions = {
   canDeleteLine: true,
   canBuyCredits: true,
   canToggleAdult: true,
-  canShareWithCustomers: true,
 };
 
 export function parsePermissions(json: string | null): UserPermissions {

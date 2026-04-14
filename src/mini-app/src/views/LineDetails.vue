@@ -330,7 +330,7 @@ function statusLabel(sub: any) {
       </div>
 
       <!-- Share with customer -->
-      <div v-if="user?.permissions?.canShareWithCustomers !== false" class="card" style="margin-top: 12px">
+      <div class="card" style="margin-top: 12px">
         <div v-if="!shareLink" class="card-row">
           <span class="card-label">Customer Link</span>
           <button class="btn-edit" @click="generateShareLink" :disabled="sharing">
