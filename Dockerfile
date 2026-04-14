@@ -36,4 +36,4 @@ COPY --from=mini-app-build /app/src/mini-app/dist ./dist/public
 COPY --from=customer-app-build /app/src/customer-app/dist ./dist/customer
 
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["node", "--no-deprecation", "dist/index.js"]

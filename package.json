@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file=.env src/index.ts",
+    "dev": "tsx watch --env-file=.env --no-deprecation src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node --no-deprecation dist/index.js"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
