@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../composables/useApi";
 import { useStore } from "../composables/useStore";
@@ -19,42 +19,84 @@ const adultEnabled = ref(true);
 const creating = ref(false);
 const selectedId = ref<string | null>(null);
 
-async function create(pkg: any) {
-  tg.showConfirm(
-    `Create a new line with "${pkg.name}" for ${pkg.credits} credits?`,
-    async (ok) => {
-      if (!ok) return;
+// Confirm modal
+const showConfirmModal = ref(false);
+const confirmPkg = ref<any>(null);
 
-      selectedId.value = pkg.id;
-      creating.value = true;
-      loading_.show("Creating line...");
-      tg.HapticFeedback.impactOccurred("medium");
+function formatDate(d: Date): string {
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
 
-      try {
-        const result = await api.createLine(pkg.id, notes.value || undefined, contact.value || undefined);
+const breakdown = computed(() => {
+  if (!confirmPkg.value || !user.value) return null;
+  const pkg = confirmPkg.value;
+  const now = new Date();
+  const expiry = new Date(now);
+  const duration = parseInt(pkg.duration, 10);
 
-        if (!adultEnabled.value) {
-          loading_.show("Disabling adult content...");
-          await api.toggleAdult(result.lineId, false);
-        }
+  if (pkg.durationUnit === "months") expiry.setMonth(expiry.getMonth() + duration);
+  else if (pkg.durationUnit === "days") expiry.setDate(expiry.getDate() + duration);
+  else if (pkg.durationUnit === "hours") expiry.setHours(expiry.getHours() + duration);
 
-        invalidateSubs();
-        invalidateUser();
-        loading_.hide();
-        tg.HapticFeedback.notificationOccurred("success");
-        tg.showAlert("Line created successfully!", () => {
-          router.replace(`/line/${result.lineId}`);
-        });
-      } catch (e: any) {
-        loading_.hide();
-        tg.HapticFeedback.notificationOccurred("error");
-        tg.showAlert(e.message || "Failed to create line");
-      } finally {
-        creating.value = false;
-        selectedId.value = null;
-      }
+  const currentCredits = user.value.credits ?? 0;
+
+  return {
+    credits: {
+      from: currentCredits,
+      to: currentCredits - pkg.credits,
+    },
+    expiry: formatDate(expiry),
+    connections: pkg.maxConnections,
+  };
+});
+
+function openConfirmModal(pkg: any) {
+  confirmPkg.value = pkg;
+  showConfirmModal.value = true;
+}
+
+function closeConfirmModal() {
+  showConfirmModal.value = false;
+  confirmPkg.value = null;
+}
+
+async function confirmCreate() {
+  if (!confirmPkg.value) return;
+  const pkg = confirmPkg.value;
+  closeConfirmModal();
+
+  selectedId.value = pkg.id;
+  creating.value = true;
+  loading_.show("Creating line...");
+  tg.HapticFeedback.impactOccurred("medium");
+
+  try {
+    const result = await api.createLine(pkg.id, notes.value || undefined, contact.value || undefined);
+
+    if (!adultEnabled.value) {
+      loading_.show("Disabling adult content...");
+      await api.toggleAdult(result.lineId, false);
     }
-  );
+
+    invalidateSubs();
+    invalidateUser();
+    loading_.hide();
+    tg.HapticFeedback.notificationOccurred("success");
+    tg.showAlert("Line created successfully!", () => {
+      router.replace(`/line/${result.lineId}`);
+    });
+  } catch (e: any) {
+    loading_.hide();
+    tg.HapticFeedback.notificationOccurred("error");
+    tg.showAlert(e.message || "Failed to create line");
+  } finally {
+    creating.value = false;
+    selectedId.value = null;
+  }
 }
 
 function durationLabel(pkg: any) {
@@ -104,7 +146,7 @@ function durationLabel(pkg: any) {
         v-for="pkg in packages"
         :key="pkg.id"
         class="card"
-        @click="!creating && create(pkg)"
+        @click="!creating && openConfirmModal(pkg)"
         :style="{ cursor: creating ? 'not-allowed' : 'pointer', opacity: creating && selectedId !== pkg.id ? 0.5 : 1 }"
       >
         <div class="card-row">
@@ -129,6 +171,45 @@ function durationLabel(pkg: any) {
         </button>
       </p>
     </template>
+
+    <!-- Confirm modal with breakdown -->
+    <Teleport to="body">
+      <div v-if="showConfirmModal && confirmPkg && breakdown" class="modal-overlay" @click.self="closeConfirmModal">
+        <div class="modal">
+          <div class="modal-icon">➕</div>
+          <div class="modal-title">Create New Line</div>
+          <div class="modal-subtitle">{{ confirmPkg.name }}</div>
+
+          <div class="breakdown">
+            <div class="breakdown-row">
+              <span class="breakdown-label">Credits</span>
+              <div class="breakdown-values">
+                <span>{{ breakdown.credits.from }}</span>
+                <span class="arrow">→</span>
+                <span class="new">{{ breakdown.credits.to }}</span>
+              </div>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Expires</span>
+              <span class="breakdown-single">{{ breakdown.expiry }}</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Connections</span>
+              <span class="breakdown-single">{{ breakdown.connections }}</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Adult Content</span>
+              <span class="breakdown-single">{{ adultEnabled ? 'Enabled' : 'Disabled' }}</span>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button class="modal-btn modal-btn-cancel" @click="closeConfirmModal">Cancel</button>
+            <button class="modal-btn modal-btn-confirm" @click="confirmCreate">Create</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -209,5 +290,74 @@ function durationLabel(pkg: any) {
 }
 .toggle input:checked + .toggle-slider::before {
   transform: translateX(20px);
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+.modal {
+  background: var(--tg-bg);
+  border-radius: 14px;
+  padding: 24px 20px;
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+}
+.modal-icon { font-size: 36px; margin-bottom: 8px; }
+.modal-title { font-size: 17px; font-weight: 700; color: var(--tg-text); }
+.modal-subtitle { font-size: 13px; color: var(--tg-hint); margin-top: 4px; }
+.breakdown {
+  margin: 20px 0 8px;
+  background: var(--tg-secondary-bg);
+  border-radius: 10px;
+  padding: 4px 12px;
+  text-align: left;
+}
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--tg-bg);
+}
+.breakdown-row:last-child { border-bottom: none; }
+.breakdown-label { font-size: 13px; color: var(--tg-hint); }
+.breakdown-values {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.breakdown-values .arrow { color: var(--tg-hint); }
+.breakdown-values .new { color: var(--tg-link); font-weight: 700; }
+.breakdown-single { font-size: 13px; font-weight: 600; color: var(--tg-text); }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+.modal-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modal-btn-cancel {
+  background: var(--tg-secondary-bg);
+  color: var(--tg-text);
+}
+.modal-btn-confirm {
+  background: var(--tg-btn);
+  color: var(--tg-btn-text);
 }
 </style>

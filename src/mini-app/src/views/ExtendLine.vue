@@ -32,9 +32,9 @@ const loading_ = useLoading();
 const extending = ref(false);
 const selectedId = ref<string | null>(null);
 
-// Downgrade confirmation modal
-const showDowngradeModal = ref(false);
-const downgradePkg = ref<any>(null);
+// Confirm modal
+const showConfirmModal = ref(false);
+const confirmPkg = ref<any>(null);
 const countdown = ref(0);
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -43,30 +43,85 @@ function isDowngrade(pkg: any): boolean {
   return parseInt(pkg.maxConnections, 10) < parseInt(line.value.maxConnections, 10);
 }
 
-function openDowngradeModal(pkg: any) {
-  downgradePkg.value = pkg;
-  countdown.value = 10;
-  showDowngradeModal.value = true;
-  countdownTimer = setInterval(() => {
-    countdown.value--;
-    if (countdown.value <= 0 && countdownTimer) {
-      clearInterval(countdownTimer);
-      countdownTimer = null;
-    }
-  }, 1000);
+// Calculate new expiry date based on package duration
+function calculateNewExpiry(pkg: any): Date {
+  const now = new Date();
+  const current = line.value?.expDate ? new Date(line.value.expDate * 1000) : now;
+  const base = current > now ? current : now;
+  const newDate = new Date(base);
+  const duration = parseInt(pkg.duration, 10);
+
+  if (pkg.durationUnit === "months") newDate.setMonth(newDate.getMonth() + duration);
+  else if (pkg.durationUnit === "days") newDate.setDate(newDate.getDate() + duration);
+  else if (pkg.durationUnit === "hours") newDate.setHours(newDate.getHours() + duration);
+
+  return newDate;
 }
 
-function closeDowngradeModal() {
-  showDowngradeModal.value = false;
-  downgradePkg.value = null;
+function formatDate(d: Date): string {
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+// Breakdown for the modal
+const breakdown = computed(() => {
+  if (!confirmPkg.value || !line.value || !user.value) return null;
+  const pkg = confirmPkg.value;
+  const newExpiry = calculateNewExpiry(pkg);
+  const currentCredits = user.value.credits ?? 0;
+  const currentConns = parseInt(line.value.maxConnections, 10);
+  const newConns = parseInt(pkg.maxConnections, 10);
+
+  return {
+    credits: {
+      from: currentCredits,
+      to: currentCredits - pkg.credits,
+    },
+    expiry: {
+      from: line.value.expiresFormatted,
+      to: formatDate(newExpiry),
+    },
+    connections: {
+      from: currentConns,
+      to: newConns,
+      changed: currentConns !== newConns,
+      downgrade: newConns < currentConns,
+    },
+  };
+});
+
+function openConfirmModal(pkg: any) {
+  confirmPkg.value = pkg;
+  countdown.value = isDowngrade(pkg) ? 5 : 0;
+  showConfirmModal.value = true;
+
+  if (countdown.value > 0) {
+    countdownTimer = setInterval(() => {
+      countdown.value--;
+      if (countdown.value <= 0 && countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+    }, 1000);
+  }
+}
+
+function closeConfirmModal() {
+  showConfirmModal.value = false;
+  confirmPkg.value = null;
   if (countdownTimer) {
     clearInterval(countdownTimer);
     countdownTimer = null;
   }
 }
 
-async function confirmExtend(pkg: any) {
-  closeDowngradeModal();
+async function confirmExtend() {
+  if (!confirmPkg.value) return;
+  const pkg = confirmPkg.value;
+  closeConfirmModal();
   selectedId.value = pkg.id;
   extending.value = true;
   loading_.show("Extending line...");
@@ -91,24 +146,8 @@ async function confirmExtend(pkg: any) {
   }
 }
 
-async function extend(pkg: any) {
-  if (isDowngrade(pkg)) {
-    openDowngradeModal(pkg);
-    return;
-  }
-  tg.showConfirm(
-    `Extend with "${pkg.name}" for ${pkg.credits} credits?`,
-    async (ok) => {
-      if (!ok) return;
-      confirmExtend(pkg);
-    }
-  );
-}
-
 function durationLabel(pkg: any) {
-  const n = pkg.duration;
-  const u = pkg.durationUnit;
-  return `${n} ${u}`;
+  return `${pkg.duration} ${pkg.durationUnit}`;
 }
 </script>
 
@@ -132,7 +171,7 @@ function durationLabel(pkg: any) {
         v-for="pkg in filteredPackages"
         :key="pkg.id"
         class="card"
-        @click="!extending && extend(pkg)"
+        @click="!extending && openConfirmModal(pkg)"
         :style="{ cursor: extending ? 'not-allowed' : 'pointer', opacity: extending && selectedId !== pkg.id ? 0.5 : 1 }"
       >
         <div class="card-row">
@@ -155,26 +194,50 @@ function durationLabel(pkg: any) {
       </div>
     </template>
 
-    <!-- Downgrade confirmation modal -->
+    <!-- Confirm modal with breakdown -->
     <Teleport to="body">
-      <div v-if="showDowngradeModal && downgradePkg" class="modal-overlay" @click.self="closeDowngradeModal">
+      <div v-if="showConfirmModal && confirmPkg && breakdown" class="modal-overlay" @click.self="closeConfirmModal">
         <div class="modal">
-          <div class="modal-icon">⚠️</div>
-          <div class="modal-title">Connection Downgrade</div>
-          <div class="modal-body">
-            This will reduce your connections from
-            <strong>{{ line?.maxConnections }}</strong> to
-            <strong>{{ downgradePkg.maxConnections }}</strong>.
+          <div class="modal-icon">{{ breakdown.connections.downgrade ? '⚠️' : '🔄' }}</div>
+          <div class="modal-title">
+            {{ breakdown.connections.downgrade ? 'Confirm Downgrade' : 'Confirm Extension' }}
           </div>
-          <div class="modal-body" style="margin-top: 8px">
-            Extend with "{{ downgradePkg.name }}" for <strong>{{ downgradePkg.credits }}</strong> credits?
+          <div class="modal-subtitle">{{ confirmPkg.name }}</div>
+
+          <div class="breakdown">
+            <div class="breakdown-row">
+              <span class="breakdown-label">Credits</span>
+              <div class="breakdown-values">
+                <span>{{ breakdown.credits.from }}</span>
+                <span class="arrow">→</span>
+                <span class="new">{{ breakdown.credits.to }}</span>
+              </div>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Expires</span>
+              <div class="breakdown-values">
+                <span>{{ breakdown.expiry.from }}</span>
+                <span class="arrow">→</span>
+                <span class="new">{{ breakdown.expiry.to }}</span>
+              </div>
+            </div>
+            <div v-if="breakdown.connections.changed" class="breakdown-row">
+              <span class="breakdown-label">Connections</span>
+              <div class="breakdown-values">
+                <span>{{ breakdown.connections.from }}</span>
+                <span class="arrow">→</span>
+                <span :class="breakdown.connections.downgrade ? 'new-warning' : 'new'">{{ breakdown.connections.to }}</span>
+              </div>
+            </div>
           </div>
+
           <div class="modal-actions">
-            <button class="modal-btn modal-btn-cancel" @click="closeDowngradeModal">Cancel</button>
+            <button class="modal-btn modal-btn-cancel" @click="closeConfirmModal">Cancel</button>
             <button
-              class="modal-btn modal-btn-confirm"
+              class="modal-btn"
+              :class="breakdown.connections.downgrade ? 'modal-btn-warn' : 'modal-btn-confirm'"
               :disabled="countdown > 0"
-              @click="confirmExtend(downgradePkg)"
+              @click="confirmExtend"
             >
               {{ countdown > 0 ? `Confirm (${countdown})` : 'Confirm' }}
             </button>
@@ -201,26 +264,59 @@ function durationLabel(pkg: any) {
   border-radius: 14px;
   padding: 24px 20px;
   width: 100%;
-  max-width: 320px;
+  max-width: 340px;
   text-align: center;
 }
 .modal-icon {
   font-size: 36px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .modal-title {
   font-size: 17px;
   font-weight: 700;
   color: var(--tg-text);
-  margin-bottom: 8px;
 }
-.modal-body {
-  font-size: 14px;
+.modal-subtitle {
+  font-size: 13px;
   color: var(--tg-hint);
-  line-height: 1.5;
+  margin-top: 4px;
 }
-.modal-body strong {
-  color: var(--tg-text);
+.breakdown {
+  margin: 20px 0 8px;
+  background: var(--tg-secondary-bg);
+  border-radius: 10px;
+  padding: 4px 12px;
+  text-align: left;
+}
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--tg-bg);
+}
+.breakdown-row:last-child { border-bottom: none; }
+.breakdown-label {
+  font-size: 13px;
+  color: var(--tg-hint);
+}
+.breakdown-values {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.breakdown-values .arrow {
+  color: var(--tg-hint);
+}
+.breakdown-values .new {
+  color: var(--tg-link);
+  font-weight: 700;
+}
+.breakdown-values .new-warning {
+  color: var(--tg-destructive, #ff3b30);
+  font-weight: 700;
 }
 .modal-actions {
   display: flex;
@@ -236,16 +332,17 @@ function durationLabel(pkg: any) {
   font-weight: 600;
   cursor: pointer;
 }
+.modal-btn:disabled { opacity: 0.4; cursor: default; }
 .modal-btn-cancel {
   background: var(--tg-secondary-bg);
   color: var(--tg-text);
 }
 .modal-btn-confirm {
+  background: var(--tg-btn);
+  color: var(--tg-btn-text);
+}
+.modal-btn-warn {
   background: var(--tg-destructive, #ff3b30);
   color: white;
-}
-.modal-btn-confirm:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 </style>
