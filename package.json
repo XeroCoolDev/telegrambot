@@ -8,9 +8,9 @@
     "start": "node --no-deprecation dist/index.js"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.0",
+    "@hono/node-server": "^1.19.14",
     "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^12.8.0",
+    "better-sqlite3": "^12.9.0",
     "grammy": "^1.30.0",
     "hono": "^4.6.0",
     "node-cron": "^3.0.3"
@@ -22,6 +22,8 @@
     "typescript": "^5.7.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }
