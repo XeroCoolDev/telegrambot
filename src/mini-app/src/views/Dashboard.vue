@@ -26,16 +26,17 @@ const loading = computed(() => userLoading.value || subsLoading.value);
 const search = ref("");
 const page = ref(1);
 const perPage = 20;
-const statusFilter = ref<"active" | "expiring" | "expired" | null>(null);
+const statusFilter = ref<"active" | "expiring" | "expired" | "disabled" | null>(null);
 
-function getLineStatus(s: any): "active" | "expiring" | "expired" {
-  if (s.status === "disabled") return "expired";
-  if (s.daysLeft !== null && s.daysLeft <= 0) return "expired";
+function getLineStatus(s: any): "active" | "expiring" | "expired" | "disabled" {
+  if (s.status === "disabled") return "disabled";
+  // Line has expired only if its timestamp is actually in the past
+  if (s.expDate !== null && s.expDate * 1000 < Date.now()) return "expired";
   if (s.daysLeft !== null && s.daysLeft <= 3) return "expiring";
   return "active";
 }
 
-function toggleFilter(filter: "active" | "expiring" | "expired") {
+function toggleFilter(filter: "active" | "expiring" | "expired" | "disabled") {
   statusFilter.value = statusFilter.value === filter ? null : filter;
   page.value = 1;
   tg.HapticFeedback.selectionChanged();
@@ -63,9 +64,10 @@ const stats = computed(() => {
   if (!subs.value) return { active: 0, expiring: 0, expired: 0, disabled: 0, total: 0 };
   let active = 0, expiring = 0, expired = 0, disabled = 0;
   for (const s of subs.value as any[]) {
-    if (s.status === "disabled") disabled++;
-    else if (s.daysLeft !== null && s.daysLeft <= 0) expired++;
-    else if (s.daysLeft !== null && s.daysLeft <= 3) expiring++;
+    const st = getLineStatus(s);
+    if (st === "disabled") disabled++;
+    else if (st === "expired") expired++;
+    else if (st === "expiring") expiring++;
     else active++;
   }
   return { active, expiring, expired, disabled, total: subs.value.length };
@@ -83,9 +85,10 @@ function setPage(p: number) {
 }
 
 function statusDotClass(sub: any) {
-  if (sub.status === "disabled") return "dot-red";
-  if (sub.daysLeft !== null && sub.daysLeft <= 0) return "dot-red";
-  if (sub.daysLeft !== null && sub.daysLeft <= 3) return "dot-orange";
+  const st = getLineStatus(sub);
+  if (st === "disabled") return "dot-gray";
+  if (st === "expired") return "dot-red";
+  if (st === "expiring") return "dot-orange";
   return "dot-green";
 }
 
@@ -137,6 +140,10 @@ function tapLine(id: string) {
         <div class="stat-card stat-card-filter" :class="{ 'stat-card-selected': statusFilter === 'expired' }" @click="toggleFilter('expired')">
           <div class="stat-value stat-expired">{{ stats.expired }}</div>
           <div class="stat-label">Expired</div>
+        </div>
+        <div class="stat-card stat-card-filter" :class="{ 'stat-card-selected': statusFilter === 'disabled' }" @click="toggleFilter('disabled')">
+          <div class="stat-value stat-disabled">{{ stats.disabled }}</div>
+          <div class="stat-label">Disabled</div>
         </div>
       </div>
 
@@ -259,7 +266,7 @@ function tapLine(id: string) {
 }
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-bottom: 16px;
 }
@@ -281,6 +288,7 @@ function tapLine(id: string) {
 .stat-active { color: #34c759; }
 .stat-expiring { color: #ff9500; }
 .stat-expired { color: #ff3b30; }
+.stat-disabled { color: var(--tg-hint); }
 .line-indicators {
   display: flex;
   align-items: center;
@@ -295,6 +303,7 @@ function tapLine(id: string) {
 .dot-green { background: #34c759; }
 .dot-orange { background: #ff9500; }
 .dot-red { background: #ff3b30; }
+.dot-gray { background: var(--tg-hint); }
 .badge-adult-off {
   font-size: 10px;
   font-weight: 700;
