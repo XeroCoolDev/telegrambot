@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
+import { Satellite, SearchX } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 
 const router = useRouter();
@@ -91,7 +92,7 @@ function tapLine(id: string) {
 
     <template v-else-if="!lines || lines.length === 0">
       <div class="empty-state">
-        <div class="icon">📡</div>
+        <Satellite class="icon-svg" />
         <p>No subscriptions linked yet.<br />Ask your provider for a link to connect.</p>
       </div>
     </template>
@@ -128,7 +129,7 @@ function tapLine(id: string) {
       />
 
       <div v-if="filtered.length === 0" class="empty-state">
-        <div class="icon">🔍</div>
+        <SearchX class="icon-svg" />
         <p>No lines match "{{ search }}"</p>
       </div>
 

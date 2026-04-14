@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { HelpCircle } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 
 const props = defineProps<{ id: string }>();
@@ -98,7 +99,7 @@ function statusLabel(sub: any) {
 
     <template v-else-if="!line">
       <div class="empty-state">
-        <div class="icon">❓</div>
+        <HelpCircle class="icon-svg" />
         <p>Line not found.</p>
       </div>
     </template>

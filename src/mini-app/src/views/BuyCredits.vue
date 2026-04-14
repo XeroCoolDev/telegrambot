@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { AlertTriangle } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 
 const tg = window.Telegram.WebApp;
@@ -56,7 +57,7 @@ function timeAgo(dateStr: string): string {
 
     <template v-else-if="error">
       <div class="empty-state">
-        <div class="icon">⚠️</div>
+        <AlertTriangle class="icon-svg" />
         <p>{{ error }}</p>
       </div>
     </template>

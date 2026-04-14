@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
+import { HelpCircle } from "lucide-vue-next";
 import { api, useAsync, type Permissions } from "../composables/useApi";
 
 const props = defineProps<{ id: string }>();
@@ -87,7 +88,7 @@ async function unlinkUser() {
 
     <template v-else-if="!user">
       <div class="empty-state">
-        <div class="icon">❓</div>
+        <HelpCircle class="icon-svg" />
         <p>User not found.</p>
       </div>
     </template>

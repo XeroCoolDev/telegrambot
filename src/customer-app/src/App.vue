@@ -72,7 +72,8 @@ body {
 .card-value { font-size: 14px; font-weight: 500; }
 
 .empty-state { text-align: center; padding: 48px 24px; color: var(--tg-hint); }
-.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state .icon, .empty-state .icon-svg { font-size: 48px; margin-bottom: 12px; }
+.empty-state .icon-svg { width: 48px; height: 48px; stroke-width: 1.5; color: var(--tg-hint); }
 .empty-state p { font-size: 14px; line-height: 1.5; }
 
 .skeleton { background: var(--tg-secondary-bg); border-radius: 8px; animation: pulse 1.5s ease-in-out infinite; }

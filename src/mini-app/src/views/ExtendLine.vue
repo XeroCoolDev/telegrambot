@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
+import { AlertTriangle, RotateCw, ArrowRight } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 import { useStore } from "../composables/useStore";
 import { useLoading } from "../composables/useLoading";
@@ -198,7 +199,7 @@ function durationLabel(pkg: any) {
     <Teleport to="body">
       <div v-if="showConfirmModal && confirmPkg && breakdown" class="modal-overlay" @click.self="closeConfirmModal">
         <div class="modal">
-          <div class="modal-icon">{{ breakdown.connections.downgrade ? '⚠️' : '🔄' }}</div>
+          <component :is="breakdown.connections.downgrade ? AlertTriangle : RotateCw" class="modal-icon-svg" :class="{ warning: breakdown.connections.downgrade }" />
           <div class="modal-title">
             {{ breakdown.connections.downgrade ? 'Confirm Downgrade' : 'Confirm Extension' }}
           </div>
@@ -209,7 +210,7 @@ function durationLabel(pkg: any) {
               <span class="breakdown-label">Credits</span>
               <div class="breakdown-values">
                 <span>{{ breakdown.credits.from }}</span>
-                <span class="arrow">→</span>
+                <ArrowRight class="arrow-icon" />
                 <span class="new">{{ breakdown.credits.to }}</span>
               </div>
             </div>
@@ -217,7 +218,7 @@ function durationLabel(pkg: any) {
               <span class="breakdown-label">Expires</span>
               <div class="breakdown-values">
                 <span>{{ breakdown.expiry.from }}</span>
-                <span class="arrow">→</span>
+                <ArrowRight class="arrow-icon" />
                 <span class="new">{{ breakdown.expiry.to }}</span>
               </div>
             </div>
@@ -225,7 +226,7 @@ function durationLabel(pkg: any) {
               <span class="breakdown-label">Connections</span>
               <div class="breakdown-values">
                 <span>{{ breakdown.connections.from }}</span>
-                <span class="arrow">→</span>
+                <ArrowRight class="arrow-icon" />
                 <span :class="breakdown.connections.downgrade ? 'new-warning' : 'new'">{{ breakdown.connections.to }}</span>
               </div>
             </div>
@@ -271,6 +272,17 @@ function durationLabel(pkg: any) {
   font-size: 36px;
   margin-bottom: 8px;
 }
+.modal-icon-svg {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 8px;
+  display: block;
+  stroke-width: 1.5;
+  color: var(--tg-link);
+}
+.modal-icon-svg.warning {
+  color: var(--tg-destructive, #ff3b30);
+}
 .modal-title {
   font-size: 17px;
   font-weight: 700;
@@ -307,7 +319,9 @@ function durationLabel(pkg: any) {
   font-size: 13px;
   font-weight: 500;
 }
-.breakdown-values .arrow {
+.breakdown-values .arrow-icon {
+  width: 14px;
+  height: 14px;
   color: var(--tg-hint);
 }
 .breakdown-values .new {

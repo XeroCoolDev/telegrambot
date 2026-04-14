@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
+import { HelpCircle, AlertTriangle, Trash2 } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 import { useStore } from "../composables/useStore";
 import { useLoading } from "../composables/useLoading";
@@ -213,7 +214,7 @@ function statusLabel(sub: any) {
 
     <template v-else-if="!line">
       <div class="empty-state">
-        <div class="icon">❓</div>
+        <HelpCircle class="icon-svg" />
         <p>Line not found.</p>
       </div>
     </template>
@@ -368,7 +369,7 @@ function statusLabel(sub: any) {
     <Teleport to="body">
       <div v-if="showDeleteModal" class="modal-overlay" @click.self="closeDeleteModal">
         <div class="modal">
-          <div class="modal-icon">{{ isExpired ? '🗑️' : '⚠️' }}</div>
+          <component :is="isExpired ? Trash2 : AlertTriangle" class="modal-icon-svg" />
           <div class="modal-title">{{ isExpired ? 'Delete Line' : 'Delete Active Line' }}</div>
           <div class="modal-body">
             <template v-if="isExpired">
@@ -578,6 +579,14 @@ function statusLabel(sub: any) {
 .modal-icon {
   font-size: 36px;
   margin-bottom: 12px;
+}
+.modal-icon-svg {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 12px;
+  display: block;
+  stroke-width: 1.5;
+  color: var(--tg-destructive, #ff3b30);
 }
 .modal-title {
   font-size: 17px;

@@ -217,9 +217,16 @@ body {
   color: var(--tg-hint);
 }
 
-.empty-state .icon {
+.empty-state .icon,
+.empty-state .icon-svg {
   font-size: 48px;
   margin-bottom: 12px;
+}
+.empty-state .icon-svg {
+  width: 48px;
+  height: 48px;
+  stroke-width: 1.5;
+  color: var(--tg-hint);
 }
 
 .empty-state p {

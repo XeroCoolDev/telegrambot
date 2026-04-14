@@ -5,6 +5,7 @@ export default { name: "Dashboard" };
 <script setup lang="ts">
 import { computed, ref, onActivated } from "vue";
 import { useRouter } from "vue-router";
+import { Link2Off, Satellite, SearchX } from "lucide-vue-next";
 import { useStore } from "../composables/useStore";
 
 const router = useRouter();
@@ -113,7 +114,7 @@ function tapLine(id: string) {
         <button class="btn btn-secondary" @click="router.push('/admin')">Admin</button>
       </div>
       <div class="empty-state">
-        <div class="icon">🔗</div>
+        <Link2Off class="icon-svg" />
         <p>Your account isn't linked yet.<br />Please contact an administrator to get started.</p>
       </div>
     </template>
@@ -170,12 +171,12 @@ function tapLine(id: string) {
       />
 
       <div v-if="!subs || subs.length === 0" class="empty-state">
-        <div class="icon">📡</div>
+        <Satellite class="icon-svg" />
         <p>No active lines found.</p>
       </div>
 
       <div v-else-if="filtered.length === 0" class="empty-state">
-        <div class="icon">🔍</div>
+        <SearchX class="icon-svg" />
         <p>No lines match "{{ search }}"</p>
       </div>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
+import { Satellite, Plus, ArrowRight } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 import { useStore } from "../composables/useStore";
 import { useLoading } from "../composables/useLoading";
@@ -126,7 +127,7 @@ async function confirmUpgrade() {
     </template>
 
     <div v-else class="empty-state">
-      <div class="icon">📡</div>
+      <Satellite class="icon-svg" />
       <p>Already at maximum connections.</p>
     </div>
 
@@ -134,7 +135,7 @@ async function confirmUpgrade() {
     <Teleport to="body">
       <div v-if="showConfirmModal && confirmOption && breakdown" class="modal-overlay" @click.self="closeConfirmModal">
         <div class="modal">
-          <div class="modal-icon">➕</div>
+          <Plus class="modal-icon-svg" />
           <div class="modal-title">Add Connections</div>
 
           <div class="breakdown">
@@ -142,7 +143,7 @@ async function confirmUpgrade() {
               <span class="breakdown-label">Credits</span>
               <div class="breakdown-values">
                 <span>{{ breakdown.credits.from }}</span>
-                <span class="arrow">→</span>
+                <ArrowRight class="arrow-icon" />
                 <span class="new">{{ breakdown.credits.to }}</span>
               </div>
             </div>
@@ -150,7 +151,7 @@ async function confirmUpgrade() {
               <span class="breakdown-label">Connections</span>
               <div class="breakdown-values">
                 <span>{{ breakdown.connections.from }}</span>
-                <span class="arrow">→</span>
+                <ArrowRight class="arrow-icon" />
                 <span class="new">{{ breakdown.connections.to }}</span>
               </div>
             </div>
@@ -186,6 +187,14 @@ async function confirmUpgrade() {
   text-align: center;
 }
 .modal-icon { font-size: 36px; margin-bottom: 8px; }
+.modal-icon-svg {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 8px;
+  display: block;
+  stroke-width: 1.5;
+  color: var(--tg-link);
+}
 .modal-title { font-size: 17px; font-weight: 700; color: var(--tg-text); }
 .breakdown {
   margin: 20px 0 8px;
@@ -210,7 +219,7 @@ async function confirmUpgrade() {
   font-size: 13px;
   font-weight: 500;
 }
-.breakdown-values .arrow { color: var(--tg-hint); }
+.breakdown-values .arrow-icon { width: 14px; height: 14px; color: var(--tg-hint); }
 .breakdown-values .new { color: var(--tg-link); font-weight: 700; }
 .modal-actions {
   display: flex;
