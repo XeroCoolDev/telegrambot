@@ -1,7 +1,7 @@
 import { Hono, type Context, type Next } from "hono";
 import type { AppDb, DbCustomerLine } from "../db/index.js";
 import { generateToken } from "../db/index.js";
-import * as xui from "../services/xui.js";
+import * as xui from "../services/xui/index.js";
 import { validateInitData } from "../services/telegram-auth.js";
 import { isRateLimited } from "../services/rate-limit.js";
 import { requirePerm, type AuthEnv } from "./auth.js";

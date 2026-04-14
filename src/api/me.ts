@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import { parsePermissions } from "../db/index.js";
-import * as xui from "../services/xui.js";
+import * as xui from "../services/xui/index.js";
 import { ADMIN_IDS, type AuthEnv } from "./auth.js";
 
 export function registerMeRoutes(api: Hono<AuthEnv>) {

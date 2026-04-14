@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import type { Bot } from "grammy";
 import type { AppDb, DbPayment } from "../db/index.js";
-import * as xui from "../services/xui.js";
+import * as xui from "../services/xui/index.js";
 import * as btcpay from "../services/btcpay.js";
 import { notifyPaymentSettled } from "../services/notifications.js";
 import { requirePerm, type AuthEnv } from "./auth.js";

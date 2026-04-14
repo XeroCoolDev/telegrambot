@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import type { Bot } from "grammy";
 import type { AppDb, DbUser, DbPayment } from "../db/index.js";
-import * as xui from "../services/xui.js";
+import * as xui from "../services/xui/index.js";
 
 const CRON_EXPR = process.env.REMINDER_CRON || "0 9 * * *";
 const EXPIRY_REMINDER_DAYS = Number(process.env.EXPIRY_REMINDER_DAYS || 1);

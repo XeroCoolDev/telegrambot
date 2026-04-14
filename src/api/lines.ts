@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import * as xui from "../services/xui.js";
+import * as xui from "../services/xui/index.js";
 import { requirePerm, type AuthEnv } from "./auth.js";
 
 export function registerLineRoutes(api: Hono<AuthEnv>) {

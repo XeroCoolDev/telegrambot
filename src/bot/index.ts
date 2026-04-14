@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard } from "grammy";
 import type { AppDb, DbUser, DbPayment } from "../db/index.js";
-import * as xui from "../services/xui.js";
+import * as xui from "../services/xui/index.js";
 import { isRateLimited } from "../services/rate-limit.js";
 import { notifyPaymentSettled } from "../services/notifications.js";
 
