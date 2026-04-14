@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
-import { AlertTriangle, RotateCw, ArrowRight } from "lucide-vue-next";
+import { ArrowRight } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 import { useStore } from "../composables/useStore";
 import { useLoading } from "../composables/useLoading";
@@ -199,7 +199,6 @@ function durationLabel(pkg: any) {
     <Teleport to="body">
       <div v-if="showConfirmModal && confirmPkg && breakdown" class="modal-overlay" @click.self="closeConfirmModal">
         <div class="modal">
-          <component :is="breakdown.connections.downgrade ? AlertTriangle : RotateCw" class="modal-icon-svg" :class="{ warning: breakdown.connections.downgrade }" />
           <div class="modal-title">
             {{ breakdown.connections.downgrade ? 'Confirm Downgrade' : 'Confirm Extension' }}
           </div>

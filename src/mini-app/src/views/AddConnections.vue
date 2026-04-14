@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
-import { Satellite, Plus, ArrowRight } from "lucide-vue-next";
+import { Satellite, ArrowRight } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 import { useStore } from "../composables/useStore";
 import { useLoading } from "../composables/useLoading";
@@ -135,7 +135,6 @@ async function confirmUpgrade() {
     <Teleport to="body">
       <div v-if="showConfirmModal && confirmOption && breakdown" class="modal-overlay" @click.self="closeConfirmModal">
         <div class="modal">
-          <Plus class="modal-icon-svg" />
           <div class="modal-title">Add Connections</div>
 
           <div class="breakdown">

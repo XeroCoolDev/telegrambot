@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
-import { Plus, ArrowRight } from "lucide-vue-next";
+import { ArrowRight } from "lucide-vue-next";
 import { api } from "../composables/useApi";
 import { useStore } from "../composables/useStore";
 import { useLoading } from "../composables/useLoading";
@@ -177,7 +177,6 @@ function durationLabel(pkg: any) {
     <Teleport to="body">
       <div v-if="showConfirmModal && confirmPkg && breakdown" class="modal-overlay" @click.self="closeConfirmModal">
         <div class="modal">
-          <Plus class="modal-icon-svg" />
           <div class="modal-title">Create New Line</div>
           <div class="modal-subtitle">{{ confirmPkg.name }}</div>
 
