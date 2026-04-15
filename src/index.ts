@@ -26,7 +26,7 @@ async function main() {
     });
   }
 
-  const app = createApp(db, bot);
+  const app = createApp(db, bot, customerBot);
   serve({ fetch: app.fetch, port: PORT }, () => {
     console.log(`[api] Listening on :${PORT}`);
   });

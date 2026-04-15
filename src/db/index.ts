@@ -108,6 +108,12 @@ export function initDb(path: string) {
       PRIMARY KEY (telegram_id, xui_line_id)
     );
     CREATE INDEX IF NOT EXISTS idx_customer_claims_tg ON customer_claims(telegram_id);
+    CREATE TABLE IF NOT EXISTS renewal_requests (
+      telegram_id INTEGER NOT NULL,
+      xui_line_id TEXT NOT NULL,
+      requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (telegram_id, xui_line_id)
+    );
   `);
 
   // Migrations for existing databases
@@ -226,6 +232,15 @@ export function initDb(path: string) {
       "SELECT group_msg_id FROM relayed_messages WHERE customer_telegram_id = ? AND customer_msg_id = ?"
     ),
     deleteRelayedMessage: db.prepare("DELETE FROM relayed_messages WHERE group_msg_id = ?"),
+
+    // ── Renewal requests (rate-limited) ──
+    getRenewalRequest: db.prepare<[number, string]>(
+      "SELECT requested_at FROM renewal_requests WHERE telegram_id = ? AND xui_line_id = ?"
+    ),
+    upsertRenewalRequest: db.prepare(
+      `INSERT INTO renewal_requests (telegram_id, xui_line_id) VALUES (?, ?)
+       ON CONFLICT (telegram_id, xui_line_id) DO UPDATE SET requested_at = datetime('now')`
+    ),
   };
 
   return { db, ...stmts };

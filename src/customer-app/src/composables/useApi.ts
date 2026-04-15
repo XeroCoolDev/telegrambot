@@ -34,18 +34,41 @@ export interface CustomerLine {
   daysLeft: number | null;
   maxConnections: string;
   adultEnabled: boolean;
+  serverUrl?: string | null;
 }
+
+// In-memory cache for /line/:id so hopping between setup guides is instant.
+// Credentials don't change often; a 60-second TTL is plenty.
+const lineCache = new Map<string, { at: number; data: CustomerLine }>();
+const LINE_TTL_MS = 60_000;
 
 export const api = {
   getLines: () => request<CustomerLine[]>("/lines"),
 
-  getLine: (id: string) => request<CustomerLine>(`/line/${id}`),
+  getLine: async (id: string): Promise<CustomerLine> => {
+    const cached = lineCache.get(id);
+    if (cached && Date.now() - cached.at < LINE_TTL_MS) return cached.data;
+    const data = await request<CustomerLine>(`/line/${id}`);
+    lineCache.set(id, { at: Date.now(), data });
+    return data;
+  },
 
-  toggleAdult: (lineId: string, enable: boolean) =>
-    request<{ success: boolean; adultEnabled: boolean }>("/toggle-adult", {
+  invalidateLine: (id: string) => lineCache.delete(id),
+
+  requestRenewal: (lineId: string) =>
+    request<{ success: boolean }>("/request-renewal", {
+      method: "POST",
+      body: JSON.stringify({ lineId }),
+    }),
+
+  toggleAdult: async (lineId: string, enable: boolean) => {
+    const res = await request<{ success: boolean; adultEnabled: boolean }>("/toggle-adult", {
       method: "POST",
       body: JSON.stringify({ lineId, enable }),
-    }),
+    });
+    lineCache.delete(lineId); // state changed, drop cache
+    return res;
+  },
 };
 
 export function useAsync<T>(fn: () => Promise<T>) {

@@ -150,6 +150,12 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const selectedPackage = packages.find((p) => p.id === packageId);
     if (!selectedPackage) return c.json({ error: "Package not found" }, 404);
 
+    // Unlimited/never-expiring lines have no expiry to extend from — block
+    // extension so we don't silently convert unlimited → now + package duration.
+    if (xui.normaliseExpDate(lineData.exp_date) === null) {
+      return c.json({ error: "This line has no expiry — nothing to extend." }, 400);
+    }
+
     // Connection lock: cannot extend with higher-connection package if too many days remaining
     const connLockDays = Number(process.env.EXTEND_CONN_LOCK_DAYS || 30);
     const daysLeft = xui.daysUntilExpiry(lineData.exp_date);

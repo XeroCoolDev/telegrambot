@@ -381,7 +381,12 @@ function statusLabel(sub: any) {
       </div>
 
       <div style="margin-top: 16px; display: flex; gap: 8px">
-        <button class="btn btn-secondary" style="flex: 1" @click="router.push(`/extend/${line.id}`)">
+        <button
+          v-if="line.expDate !== null"
+          class="btn btn-secondary"
+          style="flex: 1"
+          @click="router.push(`/extend/${line.id}`)"
+        >
           Extend
         </button>
         <button

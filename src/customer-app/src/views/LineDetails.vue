@@ -1,12 +1,63 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
 import { HelpCircle } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 
 const props = defineProps<{ id: string }>();
 const tg = window.Telegram.WebApp;
+const router = useRouter();
+
+function goSetup() {
+  tg.HapticFeedback.selectionChanged();
+  router.push(`/line/${props.id}/setup`);
+}
+
+const renewing = ref(false);
+
+async function requestRenewal() {
+  if (renewing.value) return;
+
+  const confirmed = await new Promise<boolean>((resolve) => {
+    tg.showConfirm(
+      "Request a renewal for this subscription? Your provider will be notified.",
+      (ok: boolean) => resolve(ok)
+    );
+  });
+  if (!confirmed) return;
+
+  renewing.value = true;
+  tg.MainButton.showProgress();
+  try {
+    await api.requestRenewal(props.id);
+    tg.HapticFeedback.notificationOccurred("success");
+    tg.showAlert("Renewal requested. We'll be in touch shortly.");
+  } catch (e: any) {
+    tg.HapticFeedback.notificationOccurred("error");
+    tg.showAlert(e.message || "Couldn't send the request. Try again shortly.");
+  } finally {
+    renewing.value = false;
+    tg.MainButton.hideProgress();
+  }
+}
+
+onMounted(() => {
+  tg.MainButton.setText("Request Renewal");
+  tg.MainButton.onClick(requestRenewal);
+});
+
+onUnmounted(() => {
+  tg.MainButton.offClick(requestRenewal);
+  tg.MainButton.hide();
+});
 
 const { data: line, loading } = useAsync(() => api.getLine(props.id));
+
+// Show the MainButton once the line loads, hide if it fails
+watch(line, (l) => {
+  if (l) tg.MainButton.show();
+  else tg.MainButton.hide();
+});
 
 const toggling = ref(false);
 const copied = ref(false);
@@ -130,6 +181,15 @@ function statusLabel(sub: any) {
           </label>
         </div>
       </div>
+
+      <!-- Setup on your device -->
+      <div class="card" style="margin-top: 12px; cursor: pointer" @click="goSetup">
+        <div class="card-row">
+          <span class="card-label">Set up on your device</span>
+          <span class="card-chevron">›</span>
+        </div>
+      </div>
+
     </template>
   </div>
 </template>
@@ -162,6 +222,12 @@ function statusLabel(sub: any) {
   padding: 0 0 1px 0; margin: 0 0 0 12px; outline: none; min-width: 0; flex: 1; height: auto;
 }
 .edit-inline::placeholder { color: var(--tg-hint); }
+.card-chevron {
+  color: var(--tg-hint);
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 400;
+}
 .btn-inline {
   background: none; border: none; font-size: 13px; font-weight: 500; cursor: pointer; padding: 4px 0;
 }

@@ -145,6 +145,12 @@ export async function extendLineHybrid(
   lineData: XuiLine,
   selectedPackage: XuiPackage
 ): Promise<boolean> {
+  // Unlimited lines (exp_date null/0) cannot be meaningfully extended — adding
+  // a package duration to "now" would downgrade them to a finite expiry.
+  if (normaliseExpDate(lineData.exp_date) === null) {
+    console.error(`[xui] extendLineHybrid refused: line ${lineData.id} has no expiry`);
+    return false;
+  }
   try {
     const resellerParams = new URLSearchParams({ package: selectedPackage.id });
     const resellerUrl = `${process.env.XUI_RESELLER_API_URL}?api_key=${userData.api_key}&action=edit_line&id=${lineData.id}&${resellerParams}`;
@@ -154,8 +160,12 @@ export async function extendLineHybrid(
     if (resellerResult.status !== "STATUS_SUCCESS")
       throw new Error("Reseller API non-success");
 
+    // If the line is still valid, extend from its current expiry (customer
+    // keeps unused time). If it's already expired or unset, extend from now.
     const expTs = normaliseExpDate(lineData.exp_date);
-    const currentExpiry = expTs ? new Date(expTs * 1000) : new Date();
+    const now = Date.now();
+    const baseMs = expTs && expTs * 1000 > now ? expTs * 1000 : now;
+    const currentExpiry = new Date(baseMs);
     const duration = parseInt(selectedPackage.official_duration, 10);
     const unit = selectedPackage.official_duration_in;
 

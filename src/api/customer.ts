@@ -1,4 +1,5 @@
 import { Hono, type Context, type Next } from "hono";
+import type { Bot } from "grammy";
 import type { AppDb } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { validateInitData } from "../services/telegram-auth.js";
@@ -6,6 +7,8 @@ import { isRateLimited } from "../services/rate-limit.js";
 import type { AuthEnv } from "./auth.js";
 
 export type CustomerEnv = { Variables: { customerTelegramId: number } };
+
+const RENEWAL_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** Register reseller-side endpoints for managing customer claims */
 export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
@@ -46,7 +49,7 @@ export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
 }
 
 /** Build the customer API (separate auth, own middleware) */
-export function createCustomerApi(db: AppDb): Hono<CustomerEnv> {
+export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEnv> {
   const customerApi = new Hono<CustomerEnv>();
 
   customerApi.use("/*", async (c: Context<CustomerEnv>, next: Next) => {
@@ -103,6 +106,13 @@ export function createCustomerApi(db: AppDb): Hono<CustomerEnv> {
     const line = await xui.getLine(lineId);
     if (!line) return c.json({ error: "Line not found" }, 404);
 
+    const reseller = await xui.getUser(line.member_id);
+    const serverUrl = reseller?.reseller_dns
+      ? /^https?:\/\//.test(reseller.reseller_dns)
+        ? reseller.reseller_dns
+        : `http://${reseller.reseller_dns}`
+      : null;
+
     return c.json({
       id: line.id,
       username: line.username,
@@ -114,6 +124,7 @@ export function createCustomerApi(db: AppDb): Hono<CustomerEnv> {
       daysLeft: xui.daysUntilExpiry(line.exp_date),
       maxConnections: line.max_connections,
       adultEnabled: xui.hasAdultBouquets(line),
+      serverUrl,
     });
   });
 
@@ -135,6 +146,78 @@ export function createCustomerApi(db: AppDb): Hono<CustomerEnv> {
     if (!success) return c.json({ error: "Failed to update line" }, 500);
 
     return c.json({ success: true, adultEnabled: enable });
+  });
+
+  customerApi.post("/request-renewal", async (c) => {
+    const tgId = c.get("customerTelegramId");
+    const { lineId } = await c.req.json<{ lineId: string }>();
+    if (!lineId) return c.json({ error: "Missing lineId" }, 400);
+
+    if (!db.isLineClaimedBy.get(tgId, lineId)) {
+      return c.json({ error: "Line not found" }, 404);
+    }
+
+    // Rate limit: once per 24 hours per (customer, line)
+    const prev = db.getRenewalRequest.get(tgId, lineId) as { requested_at: string } | undefined;
+    if (prev) {
+      const prevMs = new Date(prev.requested_at + "Z").getTime();
+      if (Date.now() - prevMs < RENEWAL_COOLDOWN_MS) {
+        return c.json(
+          { error: "You've already requested a renewal today. We'll be in touch." },
+          429
+        );
+      }
+    }
+
+    const supportChatId = process.env.SUPPORT_FORUM_CHAT_ID;
+    if (!customerBot || !supportChatId) {
+      return c.json({ error: "Support is not configured." }, 503);
+    }
+
+    const line = await xui.getLine(lineId);
+    if (!line) return c.json({ error: "Line not found" }, 404);
+
+    const topic = db.getSupportTopic.get(tgId) as { thread_id: number } | undefined;
+    if (!topic) {
+      return c.json(
+        { error: "Please send a message to the bot first so we can open a chat with you." },
+        400
+      );
+    }
+
+    const expires = xui.formatExpiry(line.exp_date);
+    const msg =
+      `🔔 <b>Renewal requested</b>\n` +
+      `Line: <code>${line.username}</code>\n` +
+      `Expires: ${expires}\n` +
+      `Connections: ${line.max_connections}`;
+
+    // Post to the customer's DM first so we have a message id to thread back to
+    let customerDmMsgId: number | undefined;
+    try {
+      const sent = await customerBot.api.sendMessage(tgId, msg, { parse_mode: "HTML" });
+      customerDmMsgId = sent.message_id;
+    } catch (err) {
+      console.error("[api] request-renewal customer-side send failed:", err);
+    }
+
+    // Post into the topic — if we have a customer-side msg id, record the
+    // mapping so reseller replies to this message thread back to the customer
+    try {
+      const sent = await customerBot.api.sendMessage(Number(supportChatId), msg, {
+        message_thread_id: topic.thread_id,
+        parse_mode: "HTML",
+      });
+      if (customerDmMsgId) {
+        db.recordRelayedMessage.run(sent.message_id, tgId, customerDmMsgId);
+      }
+    } catch (err) {
+      console.error("[api] request-renewal post failed:", err);
+      return c.json({ error: "Couldn't notify support. Try again shortly." }, 502);
+    }
+
+    db.upsertRenewalRequest.run(tgId, lineId);
+    return c.json({ success: true });
   });
 
   return customerApi;
