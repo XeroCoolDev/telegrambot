@@ -158,12 +158,17 @@ export function initDb(path: string) {
       "SELECT * FROM payments WHERE telegram_id = ? AND status = 'settled' ORDER BY created_at DESC LIMIT 1"
     ),
     getPendingPayments: db.prepare<[number]>(
-      "SELECT * FROM payments WHERE telegram_id = ? AND status = 'pending' AND created_at > datetime('now', '-24 hours') ORDER BY created_at DESC"
+      "SELECT * FROM payments WHERE telegram_id = ? AND status IN ('pending', 'processing', 'settling') AND created_at > datetime('now', '-24 hours') ORDER BY created_at DESC"
     ),
     expireOldPending: db.prepare(
       "UPDATE payments SET status = 'expired' WHERE status = 'pending' AND created_at <= datetime('now', '-24 hours')"
     ),
     updatePaymentStatus: db.prepare("UPDATE payments SET status = ? WHERE btcpay_invoice_id = ?"),
+    // Atomic claim: transitions any non-terminal status → 'settling'. Only the
+    // caller whose .changes === 1 owns the settlement; others see 0 and bail.
+    claimSettlement: db.prepare(
+      "UPDATE payments SET status = 'settling' WHERE btcpay_invoice_id = ? AND status IN ('pending', 'processing')"
+    ),
 
     // ── Customers ──
     upsertCustomer: db.prepare(`

@@ -97,6 +97,31 @@ export async function createInvoice(params: {
   );
 }
 
+export interface BtcPayPaymentMethod {
+  paymentMethod: string;
+  cryptoCode: string;
+  destination: string;
+  amount: string;
+  totalPaid: string;
+  due: string;
+  payments?: Array<{
+    id: string;
+    value: string;
+    status: string;
+    receivedDate?: number;
+    destination?: string;
+  }>;
+}
+
+/** Fetch per-payment-method status for an invoice (amounts paid, amount due, address). */
+export async function getInvoicePaymentMethods(
+  invoiceId: string
+): Promise<BtcPayPaymentMethod[] | null> {
+  return btcpayRequest<BtcPayPaymentMethod[]>(
+    `/api/v1/stores/${process.env.BTCPAY_STORE_ID}/invoices/${invoiceId}/payment-methods`
+  );
+}
+
 // ── Webhook verification ────────────────────────────────
 
 export function verifyWebhookSignature(

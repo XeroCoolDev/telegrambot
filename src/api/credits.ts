@@ -96,6 +96,15 @@ export async function settlePayment(bot: Bot, db: AppDb, invoiceId: string): Pro
   if (!payment) return false;
   if (payment.status === "settled") return true;
 
+  // Atomic claim — only one caller can transition pending/processing → settling.
+  // If another concurrent webhook already claimed it, bail without crediting again.
+  const claim = db.claimSettlement.run(invoiceId);
+  if (claim.changes === 0) {
+    // Either already settled, or another handler is mid-flight (status 'settling'/'failed'/'invalid').
+    const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
+    return fresh?.status === "settled";
+  }
+
   const success = await xui.adjustCredits(
     payment.xui_user_id,
     payment.credits,
@@ -135,7 +144,63 @@ export function registerBtcpayWebhook(app: Hono, db: AppDb, bot: Bot) {
     const { invoiceId, type } = event;
 
     switch (type) {
+      case "InvoiceReceivedPayment": {
+        const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+        if (!payment || payment.status !== "pending") break;
+
+        // Check if this payment covers the invoice or only partially
+        const methods = await btcpay.getInvoicePaymentMethods(invoiceId);
+        const method = methods?.find((m) => parseFloat(m.totalPaid) > 0);
+        if (!method) break;
+
+        const due = parseFloat(method.due);
+        if (due <= 0) break; // fully paid — InvoiceProcessing/Settled will handle it
+
+        const afterExpired = (event as any).afterExpiration === true;
+        const checkoutUrl = `${process.env.BTCPAY_URL}/i/${invoiceId}`;
+
+        try {
+          if (afterExpired) {
+            await bot.api.sendMessage(
+              payment.telegram_id,
+              `⚠️ Your payment arrived after the invoice expired. Please contact support with invoice ID \`${invoiceId}\` for a manual review.`,
+              { parse_mode: "Markdown" }
+            );
+          } else {
+            await bot.api.sendMessage(
+              payment.telegram_id,
+              `🟡 Received *${method.totalPaid} ${method.cryptoCode}* — still *${method.due} ${method.cryptoCode}* short.\n\n` +
+                `Send the remaining amount to:\n\`${method.destination}\`\n\n` +
+                `Or open the invoice: ${checkoutUrl}`,
+              { parse_mode: "Markdown" }
+            );
+          }
+        } catch (err) {
+          console.error("[webhook] Failed to send received-payment notification:", err);
+        }
+        break;
+      }
+      case "InvoiceProcessing": {
+        const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+        if (payment && payment.status === "pending") {
+          db.updatePaymentStatus.run("processing", invoiceId);
+          try {
+            await bot.api.sendMessage(
+              payment.telegram_id,
+              `⏳ Payment received for ${payment.credits} credits — awaiting confirmations. You'll be notified once it's settled.`
+            );
+          } catch (err) {
+            console.error("[webhook] Failed to send processing notification:", err);
+          }
+        }
+        break;
+      }
       case "InvoiceSettled": {
+        const manual = (event as any).manuallyMarked === true;
+        const overpaid = (event as any).overPaid === true;
+        if (manual || overpaid) {
+          console.log(`[webhook] InvoiceSettled ${invoiceId} manual=${manual} overpaid=${overpaid}`);
+        }
         await settlePayment(bot, db, invoiceId);
         break;
       }
@@ -143,6 +208,38 @@ export function registerBtcpayWebhook(app: Hono, db: AppDb, bot: Bot) {
         const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
         if (payment && payment.status === "pending") {
           db.updatePaymentStatus.run("expired", invoiceId);
+          const partiallyPaid = (event as any).partiallyPaid === true;
+          try {
+            if (partiallyPaid) {
+              await bot.api.sendMessage(
+                payment.telegram_id,
+                `⏰ Your invoice for ${payment.credits} credits has expired with a partial payment. Please contact support with invoice ID \`${invoiceId}\`.`,
+                { parse_mode: "Markdown" }
+              );
+            } else {
+              await bot.api.sendMessage(
+                payment.telegram_id,
+                `⏰ Your invoice for ${payment.credits} credits has expired without payment. If you still want to buy credits, please create a new invoice.`
+              );
+            }
+          } catch (err) {
+            console.error("[webhook] Failed to send expired notification:", err);
+          }
+        }
+        break;
+      }
+      case "InvoiceInvalid": {
+        const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+        if (payment && payment.status !== "settled") {
+          db.updatePaymentStatus.run("invalid", invoiceId);
+          try {
+            await bot.api.sendMessage(
+              payment.telegram_id,
+              `❌ Your payment for ${payment.credits} credits has been marked invalid by the payment provider. If you believe this is a mistake, please contact support.`
+            );
+          } catch (err) {
+            console.error("[webhook] Failed to send invalid notification:", err);
+          }
         }
         break;
       }
