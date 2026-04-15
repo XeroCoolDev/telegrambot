@@ -55,6 +55,26 @@ function isTerminal(state: InvoiceStateName): boolean {
   return ["settled", "expired", "expired_partial", "invalid", "failed"].includes(state);
 }
 
+/** Short follow-up message sent (with notification) when an invoice reaches a
+ * terminal state. Audible/visual "it's done" pop in addition to the silent
+ * in-place update of the receipt. */
+function terminalNotification(state: InvoiceStateName, payment: DbPayment): string | null {
+  switch (state) {
+    case "settled":
+      return `✅ Payment settled — ${payment.credits} credits added to your account.`;
+    case "expired":
+      return `⏰ Your invoice expired without payment. Open the dashboard if you want to try again.`;
+    case "expired_partial":
+      return `⏰ Your invoice expired with a partial payment. Please contact support.`;
+    case "invalid":
+      return `❌ Your payment was marked invalid by the payment provider. Please contact support if you think this is a mistake.`;
+    case "failed":
+      return `⚠️ Payment received but credits couldn't be applied. Please contact support.`;
+    default:
+      return null;
+  }
+}
+
 /** Render the receipt body (HTML). */
 export function formatInvoiceMessage(payment: DbPayment, state: InvoiceState): string {
   const headerIcon = state.status === "settled" ? " ✅" : state.status === "invalid" || state.status === "failed" ? " ❌" : "";
@@ -110,6 +130,8 @@ export async function upsertInvoiceMessage(
 
   const opts = { parse_mode: "HTML" as const, reply_markup: keyboard };
 
+  let receiptUpdated = false;
+
   if (payment.status_message_id) {
     try {
       await bot.api.editMessageText(
@@ -118,19 +140,37 @@ export async function upsertInvoiceMessage(
         body,
         opts
       );
-      return;
+      receiptUpdated = true;
     } catch (err: any) {
       const desc = err?.description || "";
-      if (desc.includes("message is not modified")) return; // no-op, content identical
-      // Fall through to sending a fresh message
-      console.error("[invoice-message] edit failed, sending fresh:", desc);
+      if (desc.includes("message is not modified")) {
+        receiptUpdated = true; // content identical; nothing to do but still consider it "updated"
+      } else {
+        console.error("[invoice-message] edit failed, sending fresh:", desc);
+      }
     }
   }
 
-  try {
-    const sent = await bot.api.sendMessage(payment.telegram_id, body, opts);
-    db.setPaymentStatusMessageId.run(sent.message_id, payment.btcpay_invoice_id);
-  } catch (err) {
-    console.error("[invoice-message] send failed:", err);
+  if (!receiptUpdated) {
+    try {
+      const sent = await bot.api.sendMessage(payment.telegram_id, body, opts);
+      db.setPaymentStatusMessageId.run(sent.message_id, payment.btcpay_invoice_id);
+      receiptUpdated = true;
+    } catch (err) {
+      console.error("[invoice-message] send failed:", err);
+    }
+  }
+
+  // Terminal-state notification — silent edit above is the canonical receipt;
+  // this short follow-up makes the device buzz so the user knows it's done.
+  if (receiptUpdated) {
+    const notify = terminalNotification(state.status, payment);
+    if (notify) {
+      try {
+        await bot.api.sendMessage(payment.telegram_id, notify);
+      } catch (err) {
+        console.error("[invoice-message] terminal notification failed:", err);
+      }
+    }
   }
 }
