@@ -49,8 +49,19 @@ export async function setUserApiKey(xuiUserId: string, apiKey: string): Promise<
   try {
     const res = await timedFetch(url);
     if (!res.ok) throw new Error(`mysql_query setUserApiKey: ${res.status}`);
-    const data = await res.json();
-    return data.status === "STATUS_SUCCESS";
+    // UPDATE statements on some XUI versions return an empty body. Treat that
+    // as success; verify by re-fetching the user and comparing.
+    const text = (await res.text()).trim();
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        if (data.status !== "STATUS_SUCCESS") return false;
+      } catch {
+        // fall through to verification
+      }
+    }
+    const verify = await getUser(xuiUserId);
+    return verify?.api_key === apiKey;
   } catch (e) {
     console.error("[xui] setUserApiKey failed:", e);
     return false;
