@@ -38,6 +38,7 @@ export interface UserInfo {
   xuiUsername?: string;
   isAdmin?: boolean;
   permissions?: Permissions;
+  canShareWithCustomers?: boolean;
   config?: {
     maxConnections: number;
     extendConnLockDays: number;
@@ -54,6 +55,8 @@ export interface Subscription {
   maxConnections: string;
   adultEnabled: boolean;
   resellerNotes: string | null;
+  customerUsername: string | null;
+  customerTelegramId: number | null;
 }
 
 export interface XuiPackage {
@@ -142,6 +145,17 @@ export const api = {
     request<{ token: string; link: string }>("/customer/generate-token", {
       method: "POST",
       body: JSON.stringify({ lineId }),
+    }),
+
+  getLineClaims: (lineId: string) =>
+    request<Array<{ telegram_id: number; username: string | null; first_name: string | null; created_at: string }>>(
+      `/customer/line-claims/${lineId}`
+    ),
+
+  unclaimCustomer: (lineId: string, telegramId: number) =>
+    request<{ success: boolean }>("/customer/unclaim", {
+      method: "POST",
+      body: JSON.stringify({ lineId, telegramId }),
     }),
 
   extendLine: (lineId: string, packageId: string) =>

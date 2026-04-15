@@ -50,7 +50,7 @@ const filtered = computed(() => {
   const q = search.value.toLowerCase().trim();
   if (q) {
     result = result.filter(
-      (s: any) => s.username?.toLowerCase().includes(q) || s.id?.toString().includes(q) || s.notes?.toLowerCase().includes(q)
+      (s: any) => s.username?.toLowerCase().includes(q) || s.id?.toString().includes(q)
     );
   }
 
@@ -142,9 +142,9 @@ function tapLine(id: string) {
       >
         <div class="card-row">
           <div style="min-width: 0; flex: 1">
-            <div style="font-weight: 600; font-size: 15px">{{ line.notes || line.username }}</div>
+            <div style="font-weight: 600; font-size: 15px">{{ line.username }}</div>
             <div style="font-size: 13px; color: var(--tg-hint); margin-top: 2px">
-              {{ line.notes ? line.username + ' · ' : '' }}{{ line.expiresFormatted }} · {{ line.maxConnections }} conn
+              {{ line.expiresFormatted }} · {{ line.maxConnections }} conn
             </div>
           </div>
           <div class="line-indicators">

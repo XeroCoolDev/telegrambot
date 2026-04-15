@@ -11,17 +11,16 @@ import { registerAdminRoutes } from "./admin.js";
 import { registerResellerCustomerRoutes, createCustomerApi } from "./customer.js";
 
 export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
-  void customerBot; // kept for future use
   const app = new Hono();
 
   // Reseller API (authenticated)
   const api = new Hono<AuthEnv>();
   api.use("/*", resellerAuthMiddleware(db));
   registerMeRoutes(api);
-  registerLineRoutes(api);
+  registerLineRoutes(api, db);
   registerCreditRoutes(api, db);
   registerAdminRoutes(api, db);
-  registerResellerCustomerRoutes(api, db);
+  registerResellerCustomerRoutes(api, db, customerBot);
 
   // Customer API (separate auth)
   const customerApi = createCustomerApi(db);

@@ -116,6 +116,19 @@ export function initDb(path: string) {
       thread_id INTEGER NOT NULL,
       last_activity TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS relayed_messages (
+      group_msg_id INTEGER PRIMARY KEY,
+      customer_telegram_id INTEGER NOT NULL,
+      customer_msg_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS customer_claims (
+      telegram_id INTEGER NOT NULL,
+      xui_line_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (telegram_id, xui_line_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_claims_tg ON customer_claims(telegram_id);
   `);
 
   // Migrations for existing databases
@@ -207,6 +220,50 @@ export function initDb(path: string) {
       "SELECT * FROM support_topics WHERE last_activity <= datetime('now', '-48 hours')"
     ),
     deleteSupportTopic: db.prepare("DELETE FROM support_topics WHERE customer_telegram_id = ?"),
+
+    // ── Customer claims (tg id ↔ xui line) ──
+    claimLine: db.prepare(
+      "INSERT OR IGNORE INTO customer_claims (telegram_id, xui_line_id) VALUES (?, ?)"
+    ),
+    unclaimLine: db.prepare(
+      "DELETE FROM customer_claims WHERE telegram_id = ? AND xui_line_id = ?"
+    ),
+    getClaimedLineIds: db.prepare<[number]>(
+      "SELECT xui_line_id FROM customer_claims WHERE telegram_id = ?"
+    ),
+    getAllClaimsWithCustomer: db.prepare(
+      `SELECT cc.xui_line_id, cc.telegram_id, c.username, c.first_name
+       FROM customer_claims cc
+       LEFT JOIN customers c ON c.telegram_id = cc.telegram_id`
+    ),
+    getClaimsForLine: db.prepare<[string]>(
+      `SELECT cc.telegram_id, c.username, c.first_name, cc.created_at
+       FROM customer_claims cc
+       LEFT JOIN customers c ON c.telegram_id = cc.telegram_id
+       WHERE cc.xui_line_id = ?
+       ORDER BY cc.created_at`
+    ),
+    isLineClaimedBy: db.prepare<[number, string]>(
+      "SELECT 1 FROM customer_claims WHERE telegram_id = ? AND xui_line_id = ?"
+    ),
+    getLineClaimedByOther: db.prepare<[string, number]>(
+      "SELECT telegram_id FROM customer_claims WHERE xui_line_id = ? AND telegram_id != ? LIMIT 1"
+    ),
+    unclaimAllForTelegram: db.prepare<[number]>(
+      "DELETE FROM customer_claims WHERE telegram_id = ?"
+    ),
+
+    // ── Relayed messages (for /delete) ──
+    recordRelayedMessage: db.prepare(
+      "INSERT OR REPLACE INTO relayed_messages (group_msg_id, customer_telegram_id, customer_msg_id) VALUES (?, ?, ?)"
+    ),
+    getRelayedMessage: db.prepare<[number]>(
+      "SELECT customer_telegram_id, customer_msg_id FROM relayed_messages WHERE group_msg_id = ?"
+    ),
+    getGroupMsgByCustomerMsg: db.prepare<[number, number]>(
+      "SELECT group_msg_id FROM relayed_messages WHERE customer_telegram_id = ? AND customer_msg_id = ?"
+    ),
+    deleteRelayedMessage: db.prepare("DELETE FROM relayed_messages WHERE group_msg_id = ?"),
   };
 
   return { db, ...stmts };

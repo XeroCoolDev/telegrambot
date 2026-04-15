@@ -27,6 +27,7 @@ export function createBot(db: AppDb) {
   // ── /start ──────────────────────────────────────────
   bot.command("start", async (ctx) => {
     const tgUser = ctx.from!;
+    const payload = ctx.match?.trim();
 
     // Upsert user (xui_user_id stays null until admin links it)
     db.upsertUser.run(tgUser.id, tgUser.username || null, tgUser.first_name);
@@ -42,10 +43,9 @@ export function createBot(db: AppDb) {
       return;
     }
 
-    const keyboard = new InlineKeyboard().webApp(
-      "📱 Open Dashboard",
-      WEBAPP_URL
-    );
+    // `payload` currently unused but kept for future deep-link flows
+    void payload;
+    const keyboard = new InlineKeyboard().webApp("📱 Open Dashboard", WEBAPP_URL);
 
     await ctx.reply(
       `Welcome back${tgUser.first_name ? `, ${tgUser.first_name}` : ""}! 👋\n\n` +

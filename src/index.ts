@@ -21,7 +21,7 @@ async function main() {
   if (process.env.CUSTOMER_BOT_TOKEN) {
     customerBot = createCustomerBot(db);
     customerBot.start({
-      allowed_updates: ["message", "callback_query", "my_chat_member"],
+      allowed_updates: ["message", "callback_query", "my_chat_member", "message_reaction"],
       onStart: () => console.log("[bot] Customer bot running (polling)"),
     });
   }
