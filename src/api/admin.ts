@@ -9,7 +9,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const users = db.db
       .prepare(
-        "SELECT telegram_id, username, first_name, xui_user_id, permissions, created_at FROM users ORDER BY created_at DESC"
+        "SELECT telegram_id, username, first_name, xui_user_id, xui_api_key, permissions, created_at FROM users ORDER BY created_at DESC"
       )
       .all() as any[];
     return c.json(users.map((u) => ({ ...u, permissions: parsePermissions(u.permissions) })));
@@ -39,8 +39,30 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
       db.upsertUser.run(telegramId, null, null);
     }
 
-    db.linkXui.run(xuiUserId, xuiUser.api_key, telegramId);
-    return c.json({ success: true, username: xuiUser.username });
+    // Store whatever api_key XUI has (may be empty — admin can paste it in
+    // later on the user page after generating in XUI).
+    db.linkXui.run(xuiUserId, xuiUser.api_key || null, telegramId);
+    return c.json({
+      success: true,
+      username: xuiUser.username,
+      apiKeyPresent: !!xuiUser.api_key,
+    });
+  });
+
+  // Admin: set/update api_key manually (after generating in the XUI panel)
+  api.post("/admin/set-api-key", async (c) => {
+    if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    const { telegramId, apiKey } = await c.req.json<{ telegramId: number; apiKey: string }>();
+
+    if (!apiKey || !/^[A-Za-z0-9]{16,64}$/.test(apiKey)) {
+      return c.json({ error: "Invalid api_key (alphanumeric, 16–64 chars)" }, 400);
+    }
+
+    const target = db.getUser.get(telegramId) as DbUser | undefined;
+    if (!target?.xui_user_id) return c.json({ error: "User not linked to an XUI user" }, 404);
+
+    db.linkXui.run(target.xui_user_id, apiKey, telegramId);
+    return c.json({ success: true });
   });
 
   api.post("/admin/unlink", async (c) => {

@@ -165,6 +165,12 @@ export const api = {
 
   // Admin
   adminGetUsers: () => request<any[]>("/admin/users"),
+
+  adminSetApiKey: (telegramId: number, apiKey: string) =>
+    request<{ success: boolean }>("/admin/set-api-key", {
+      method: "POST",
+      body: JSON.stringify({ telegramId, apiKey }),
+    }),
   adminGetPayments: () => request<any[]>("/admin/payments"),
   adminLink: (telegramId: number, xuiUserId: string) =>
     request<{ success: boolean; username: string }>("/admin/link", {
