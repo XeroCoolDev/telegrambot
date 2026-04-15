@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { AlertTriangle } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
 
@@ -8,6 +8,15 @@ const tg = window.Telegram.WebApp;
 const { data: options, loading, error } = useAsync(() => api.getCreditOptions());
 const { data: pending, loading: pendingLoading, refresh: refreshPending } = useAsync(() => api.getPendingPayments());
 const purchasing = ref<string | null>(null);
+
+// Poll pending payments every 5s while on this page so status flips in real time
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  pollTimer = setInterval(() => refreshPending(), 5000);
+});
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
+});
 
 async function buyItem(item: any) {
   if (purchasing.value) return;
@@ -31,6 +40,15 @@ async function buyItem(item: any) {
 function openInvoice(url: string) {
   tg.HapticFeedback.impactOccurred("light");
   tg.openLink(url);
+}
+
+function statusLabel(s: string): string {
+  switch (s) {
+    case "pending": return "⏳ Awaiting payment";
+    case "processing": return "⏳ Awaiting confirmations";
+    case "settling": return "⏳ Settling…";
+    default: return s;
+  }
 }
 
 function timeAgo(dateStr: string): string {
@@ -104,10 +122,10 @@ function timeAgo(dateStr: string): string {
           <div>
             <div style="font-weight: 600; font-size: 15px">{{ p.title }}</div>
             <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
-              {{ timeAgo(p.createdAt) }} · {{ p.amount }} {{ p.currency }}
+              {{ timeAgo(p.createdAt) }} · {{ p.amount }} {{ p.currency }} · {{ statusLabel(p.status) }}
             </div>
           </div>
-          <span class="pending-badge">Continue</span>
+          <span class="pending-badge">{{ p.status === 'pending' ? 'Continue' : '…' }}</span>
         </div>
       </div>
     </template>

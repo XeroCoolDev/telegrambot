@@ -18,7 +18,7 @@ export function createApp(db: AppDb, xerocoolBot: Bot, xposedBot?: Bot) {
   xerocoolApi.use("/*", xerocoolAuthMiddleware(db));
   registerMeRoutes(xerocoolApi);
   registerLineRoutes(xerocoolApi, db);
-  registerCreditRoutes(xerocoolApi, db);
+  registerCreditRoutes(xerocoolApi, db, xerocoolBot);
   registerAdminRoutes(xerocoolApi, db);
   registerXerocoolXposedRoutes(xerocoolApi, db);
 

@@ -44,6 +44,7 @@ export interface DbPayment {
   xui_user_id: string;
   checkout_url: string | null;
   status: string;
+  status_message_id: number | null;
   created_at: string;
 }
 
@@ -132,6 +133,9 @@ export function initDb(path: string) {
   if (!paymentCols.some((c) => c.name === "checkout_url")) {
     db.exec("ALTER TABLE payments ADD COLUMN checkout_url TEXT");
   }
+  if (!paymentCols.some((c) => c.name === "status_message_id")) {
+    db.exec("ALTER TABLE payments ADD COLUMN status_message_id INTEGER");
+  }
 
   // Prepared statements
   const stmts = {
@@ -164,6 +168,9 @@ export function initDb(path: string) {
       "UPDATE payments SET status = 'expired' WHERE status = 'pending' AND created_at <= datetime('now', '-24 hours')"
     ),
     updatePaymentStatus: db.prepare("UPDATE payments SET status = ? WHERE btcpay_invoice_id = ?"),
+    setPaymentStatusMessageId: db.prepare(
+      "UPDATE payments SET status_message_id = ? WHERE btcpay_invoice_id = ?"
+    ),
     // Atomic claim: transitions any non-terminal status → 'settling'. Only the
     // caller whose .changes === 1 owns the settlement; others see 0 and bail.
     claimSettlement: db.prepare(

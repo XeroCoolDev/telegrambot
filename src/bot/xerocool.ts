@@ -2,7 +2,8 @@ import { Bot, InlineKeyboard } from "grammy";
 import type { AppDb, DbUser, DbPayment } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { isRateLimited } from "../services/rate-limit.js";
-import { notifyPaymentSettled } from "../services/notifications.js";
+import { notifyAdminPaymentSettled } from "../services/notifications.js";
+import { upsertInvoiceMessage } from "../services/invoice-message.js";
 
 export function createXerocoolBot(db: AppDb) {
   const bot = new Bot(process.env.XEROCOOL_BOT_TOKEN!);
@@ -172,10 +173,13 @@ export function createXerocoolBot(db: AppDb) {
 
     db.updatePaymentStatus.run(success ? "settled" : "failed", invoiceId);
 
+    const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
     if (success) {
-      await notifyPaymentSettled(bot, db, payment, invoiceId, true);
+      if (fresh) await upsertInvoiceMessage(bot, db, fresh, { status: "settled", settledAt: new Date() });
+      await notifyAdminPaymentSettled(bot, db, payment, invoiceId, true);
       await ctx.reply(`✅ Invoice \`${invoiceId}\` settled. ${payment.credits} credits added to user ${payment.xui_user_id}.`, { parse_mode: "Markdown" });
     } else {
+      if (fresh) await upsertInvoiceMessage(bot, db, fresh, { status: "failed" });
       await ctx.reply(`❌ Failed to add credits for invoice \`${invoiceId}\`.`, { parse_mode: "Markdown" });
     }
   });

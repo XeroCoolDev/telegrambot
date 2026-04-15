@@ -10,34 +10,24 @@ function getUserLink(db: AppDb, telegramId: number): string {
   return `[User ${telegramId}](tg://user?id=${telegramId})`;
 }
 
-export async function notifyPaymentSettled(
+/** Admin-chat notification when a payment settles. User-side receipt is
+ * handled inline by upsertInvoiceMessage editing the original invoice msg. */
+export async function notifyAdminPaymentSettled(
   bot: Bot,
   db: AppDb,
   payment: { telegram_id: number; amount: string; currency: string; credits: number },
   invoiceId: string,
   manual = false
 ) {
+  if (!XEROCOOL_ADMIN_CHAT_ID) return;
   const userLink = getUserLink(db, payment.telegram_id);
-
-  // Notify user
   try {
-    await bot.api.sendMessage(payment.telegram_id,
-      `✅ Payment confirmed! ${payment.credits} credits added to your account.`,
+    await bot.api.sendMessage(
+      XEROCOOL_ADMIN_CHAT_ID,
+      `💰 Payment ${manual ? "settled (manual)" : "received"}\nUser: ${userLink}\nAmount: ${payment.amount} ${payment.currency}\nCredits: ${payment.credits}\nInvoice: \`${invoiceId}\``,
       { parse_mode: "Markdown" }
     );
   } catch (err) {
-    console.error("[notify] Failed to message user:", err);
-  }
-
-  // Notify admin chat
-  if (XEROCOOL_ADMIN_CHAT_ID) {
-    try {
-      await bot.api.sendMessage(XEROCOOL_ADMIN_CHAT_ID,
-        `💰 Payment ${manual ? "settled (manual)" : "received"}\nUser: ${userLink}\nAmount: ${payment.amount} ${payment.currency}\nCredits: ${payment.credits}\nInvoice: \`${invoiceId}\``,
-        { parse_mode: "Markdown" }
-      );
-    } catch (err) {
-      console.error("[notify] Failed to message admin chat:", err);
-    }
+    console.error("[notify] Failed to message admin chat:", err);
   }
 }

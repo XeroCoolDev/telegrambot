@@ -91,7 +91,7 @@ export const api = {
   getCreditOptions: () => request<CreditOptions>("/credit-options"),
 
   getPendingPayments: () =>
-    request<{ invoiceId: string; credits: number; amount: string; currency: string; title: string; checkoutUrl: string; createdAt: string }[]>(
+    request<{ invoiceId: string; credits: number; amount: string; currency: string; title: string; checkoutUrl: string; status: string; createdAt: string }[]>(
       "/pending-payments"
     ),
 
