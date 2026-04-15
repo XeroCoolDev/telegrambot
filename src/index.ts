@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { createXerocoolBot } from "./bot/xerocool.js";
 import { createXposedBot } from "./bot/xposed.js";
@@ -12,20 +13,34 @@ async function main() {
   const db = initDb(process.env.DATABASE_PATH || "./data/bot.db");
   console.log("[db] Initialised");
 
-  // Backfill missing xui_api_key for already-linked users (one-off after
-  // admin-linking, since the key may not have been captured at link time).
+  // Backfill missing xui_api_key for already-linked users. If XUI already has
+  // a key, store it. If XUI's api_key is empty, generate one and write to
+  // both sides so reseller API calls work.
   try {
     const missing = db.db
       .prepare(
         "SELECT telegram_id, xui_user_id FROM users WHERE xui_user_id IS NOT NULL AND (xui_api_key IS NULL OR xui_api_key = '')"
       )
       .all() as { telegram_id: number; xui_user_id: string }[];
+
     for (const u of missing) {
       const xuiUser = await xui.getUser(u.xui_user_id);
-      if (xuiUser?.api_key) {
-        db.linkXui.run(u.xui_user_id, xuiUser.api_key, u.telegram_id);
-        console.log(`[db] Backfilled api_key for telegram_id ${u.telegram_id}`);
+      if (!xuiUser) {
+        console.error(`[db] api_key backfill: XUI user ${u.xui_user_id} not found`);
+        continue;
       }
+      let key = xuiUser.api_key;
+      if (!key) {
+        key = randomBytes(16).toString("hex").toUpperCase();
+        const ok = await xui.setUserApiKey(u.xui_user_id, key);
+        if (!ok) {
+          console.error(`[db] api_key backfill: failed to push new key to XUI for user ${u.xui_user_id}`);
+          continue;
+        }
+        console.log(`[db] Generated & synced api_key on XUI for user ${u.xui_user_id}`);
+      }
+      db.linkXui.run(u.xui_user_id, key, u.telegram_id);
+      console.log(`[db] Backfilled api_key for telegram_id ${u.telegram_id}`);
     }
   } catch (err) {
     console.error("[db] api_key backfill failed:", err);
