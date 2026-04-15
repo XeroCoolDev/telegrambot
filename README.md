@@ -13,12 +13,12 @@ Telegram bot and mini app for managing xui.one IPTV subscriptions with BTCPay Bi
 - **Search & filter** — paginated line list with status filtering
 - **Admin panel** — manage users, view payments, link/unlink accounts
 
-### Customer Bot (optional)
-- **Deep-link sharing** — resellers generate links for customers
-- **Customer mini app** — view connection details, server DNS, credentials
-- **Customer notes** — per-line notes for multi-device customers
+### Customer (Xposed) Bot (optional)
+- **One-tap claim** — reseller pastes `/link <id>` in the customer's support topic; customer taps a callback button to bind their Telegram account
+- **Customer mini app** — view credentials, expiry, connections; per-device setup guides (XCIPTV / GSE / Formuler)
+- **Renewal requests** — Telegram MainButton sends a notification into the support topic
 - **Adult toggle** — customers can manage their own content
-- **Forum support** — threaded support via Telegram forum topics
+- **Threaded support** — Telegram forum topics with reply threading and emoji reaction mirroring
 
 ## Stack
 - **Server**: Node.js + TypeScript, grammY, Hono, better-sqlite3, node-cron
@@ -64,30 +64,36 @@ See `.env.example` for all available environment variables.
 
 ```
 src/
-├── index.ts                 # Entry: boots db, bot, api, scheduler
-├── db/index.ts              # SQLite schema + prepared statements
+├── index.ts                  # Entry: boots db, bots, api, scheduler
+├── db/index.ts               # SQLite schema + prepared statements
 ├── bot/
-│   ├── index.ts             # Reseller bot commands
-│   └── customer.ts          # Customer bot commands + support
-├── api/index.ts             # Hono API routes + webhooks + admin
-├── scheduler/index.ts       # Cron: expiry reminders, top-up reminders
+│   ├── xerocool.ts           # XeroCool (reseller) bot commands
+│   └── xposed.ts             # Xposed (customer) bot, support relay, claim flow
+├── api/
+│   ├── index.ts              # Hono app, host-based mini-app dispatch
+│   ├── auth.ts               # Reseller initData middleware
+│   ├── me.ts / lines.ts / credits.ts / admin.ts / xposed.ts
+├── scheduler/index.ts        # Daily cron: expiry reminders, top-up reminders, payment cleanup
 ├── services/
-│   ├── xui.ts               # XUI admin + reseller API client
-│   ├── btcpay.ts            # BTCPay POS + invoices + webhook verification
-│   ├── telegram-auth.ts     # initData HMAC-SHA256 validation
-│   ├── notifications.ts     # Payment notifications (user + admin)
-│   └── rate-limit.ts        # In-memory rate limiter
-├── xerocool-app/                # XeroCool (reseller) Vue 3 SPA
+│   ├── xui/                  # XUI admin + reseller API (split: client/lines/users/...)
+│   ├── btcpay.ts             # BTCPay POS + invoices + webhook verification
+│   ├── claim-token.ts        # HMAC-signed customer claim tokens
+│   ├── invoice-message.ts    # Live-edited Telegram invoice receipt
+│   ├── telegram-auth.ts      # initData HMAC-SHA256 validation
+│   ├── notifications.ts      # Admin-chat payment notifications
+│   └── rate-limit.ts         # In-memory rate limiter
+├── xerocool-app/             # XeroCool (reseller) Vue 3 SPA
 │   └── src/views/
-│       ├── Dashboard.vue    # Stats, search, filtered line list
-│       ├── LineDetails.vue  # Credentials, toggles, share, delete
-│       ├── ExtendLine.vue   # Package selection with downgrade warning
-│       ├── CreateLine.vue   # New line form with adult toggle
-│       ├── AddConnections.vue # Connection upgrade pricing
-│       ├── BuyCredits.vue   # BTCPay credit packages + pending invoices
-│       └── Admin.vue        # User management, payments, customers
-└── xposed-app/            # Xposed (customer) Vue 3 SPA
+│       ├── Dashboard.vue     # Stats, search, filtered line list
+│       ├── LineDetails.vue   # Credentials, toggles, send-to-customer, delete
+│       ├── ExtendLine.vue    # Package selection with downgrade warning
+│       ├── CreateLine.vue    # New line form with adult toggle
+│       ├── AddConnections.vue
+│       ├── BuyCredits.vue    # BTCPay packages + pending payments + history
+│       └── Admin.vue         # User management, payments
+└── xposed-app/               # Xposed (customer) Vue 3 SPA
     └── src/views/
-        ├── Dashboard.vue    # Line list with search + status filter
-        └── LineDetails.vue  # Connection details, notes, adult toggle
+        ├── Dashboard.vue
+        ├── LineDetails.vue   # Credentials, adult toggle, MainButton renewal
+        └── setup/            # Per-device setup guides (XCIPTV / GSE / Formuler)
 ```

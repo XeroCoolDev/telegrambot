@@ -48,13 +48,6 @@ export interface DbPayment {
   created_at: string;
 }
 
-export interface DbCustomer {
-  telegram_id: number;
-  username: string | null;
-  first_name: string | null;
-  created_at: string;
-}
-
 export type AppDb = ReturnType<typeof initDb>;
 
 export function initDb(path: string) {
@@ -202,9 +195,6 @@ export function initDb(path: string) {
         last_activity = datetime('now')
     `),
     touchSupportTopic: db.prepare("UPDATE support_topics SET last_activity = datetime('now') WHERE customer_telegram_id = ?"),
-    getStaleTopics: db.prepare(
-      "SELECT * FROM support_topics WHERE last_activity <= datetime('now', '-48 hours')"
-    ),
     deleteSupportTopic: db.prepare("DELETE FROM support_topics WHERE customer_telegram_id = ?"),
 
     // ── Customer claims (tg id ↔ xui line) ──

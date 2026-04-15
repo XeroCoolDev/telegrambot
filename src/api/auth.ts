@@ -65,7 +65,3 @@ export function requirePerm(
   return null;
 }
 
-/** Check if context user is an admin */
-export function isAdmin(c: Context<AuthEnv>): boolean {
-  return ADMIN_IDS.has(c.get("telegramId"));
-}

@@ -46,7 +46,7 @@ export async function adminRequest<T>(
 }
 
 /** Append bouquet and allowed_outputs as array params (reseller API format) */
-export function appendLineArrayFields(params: URLSearchParams, line: XuiLine) {
+function appendLineArrayFields(params: URLSearchParams, line: XuiLine) {
   const bouquets: (string | number)[] = JSON.parse(line.bouquet || "[]");
   bouquets.forEach((b) => params.append("bouquets_selected[]", String(b)));
   const outputs: (string | number)[] = JSON.parse(line.allowed_outputs || "[]");

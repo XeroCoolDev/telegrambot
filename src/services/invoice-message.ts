@@ -76,7 +76,7 @@ function terminalNotification(state: InvoiceStateName, payment: DbPayment): stri
 }
 
 /** Render the receipt body (HTML). */
-export function formatInvoiceMessage(payment: DbPayment, state: InvoiceState): string {
+function formatInvoiceMessage(payment: DbPayment, state: InvoiceState): string {
   const headerIcon = state.status === "settled" ? " ✅" : state.status === "invalid" || state.status === "failed" ? " ❌" : "";
   const lines: string[] = [
     `🧾 <b>Credit Purchase</b>${headerIcon}`,
