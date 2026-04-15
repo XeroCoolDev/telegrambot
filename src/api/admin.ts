@@ -25,24 +25,6 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     return c.json(payments);
   });
 
-  api.get("/admin/customers", async (c) => {
-    if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
-    const customers = db.db
-      .prepare("SELECT c.telegram_id, c.username, c.first_name, c.created_at FROM customers c ORDER BY c.created_at DESC")
-      .all();
-    return c.json(customers);
-  });
-
-  api.get("/admin/customer-lines", async (c) => {
-    if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
-    const lines = db.db
-      .prepare(
-        "SELECT cl.xui_line_id, cl.customer_telegram_id, cl.reseller_xui_user_id, cl.notes, cl.created_at, c.username as customer_username FROM customer_lines cl LEFT JOIN customers c ON cl.customer_telegram_id = c.telegram_id ORDER BY cl.created_at DESC"
-      )
-      .all();
-    return c.json(lines);
-  });
-
   api.post("/admin/link", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId, xuiUserId } = await c.req.json<{ telegramId: number; xuiUserId: string }>();

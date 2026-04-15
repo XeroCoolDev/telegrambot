@@ -1,5 +1,4 @@
 import Database from "better-sqlite3";
-import crypto from "crypto";
 
 export interface DbUser {
   telegram_id: number;
@@ -55,16 +54,6 @@ export interface DbCustomer {
   created_at: string;
 }
 
-export interface DbCustomerLine {
-  id: number;
-  customer_telegram_id: number;
-  xui_line_id: string;
-  reseller_xui_user_id: string;
-  token: string;
-  notes: string | null;
-  created_at: string;
-}
-
 export type AppDb = ReturnType<typeof initDb>;
 
 export function initDb(path: string) {
@@ -101,16 +90,6 @@ export function initDb(path: string) {
       first_name TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
-    CREATE TABLE IF NOT EXISTS customer_lines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      customer_telegram_id INTEGER,
-      xui_line_id TEXT NOT NULL,
-      reseller_xui_user_id TEXT NOT NULL,
-      token TEXT UNIQUE NOT NULL,
-      notes TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(xui_line_id)
-    );
     CREATE TABLE IF NOT EXISTS support_topics (
       customer_telegram_id INTEGER PRIMARY KEY,
       thread_id INTEGER NOT NULL,
@@ -140,10 +119,8 @@ export function initDb(path: string) {
     db.exec("ALTER TABLE users ADD COLUMN permissions TEXT");
   }
 
-  const clCols = db.prepare("PRAGMA table_info(customer_lines)").all() as { name: string }[];
-  if (clCols.length > 0 && !clCols.some((c) => c.name === "notes")) {
-    db.exec("ALTER TABLE customer_lines ADD COLUMN notes TEXT");
-  }
+  // Drop obsolete customer_lines table if it exists (replaced by customer_claims)
+  db.exec("DROP TABLE IF EXISTS customer_lines");
 
   const paymentCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
   if (!paymentCols.some((c) => c.name === "checkout_url")) {
@@ -190,21 +167,6 @@ export function initDb(path: string) {
         username = excluded.username,
         first_name = excluded.first_name
     `),
-    getCustomer: db.prepare<[number]>("SELECT * FROM customers WHERE telegram_id = ?"),
-
-    // ── Customer lines ──
-    createCustomerToken: db.prepare(`
-      INSERT INTO customer_lines (xui_line_id, reseller_xui_user_id, token)
-      VALUES (?, ?, ?)
-      ON CONFLICT(xui_line_id) DO UPDATE SET
-        token = excluded.token
-    `),
-    getCustomerLineByToken: db.prepare<[string]>("SELECT * FROM customer_lines WHERE token = ?"),
-    linkCustomerToLine: db.prepare("UPDATE customer_lines SET customer_telegram_id = ? WHERE token = ?"),
-    getCustomerLines: db.prepare<[number]>("SELECT * FROM customer_lines WHERE customer_telegram_id = ?"),
-    getCustomerLineByLineId: db.prepare<[string]>("SELECT * FROM customer_lines WHERE xui_line_id = ?"),
-    getUserByXuiId: db.prepare<[string]>("SELECT * FROM users WHERE xui_user_id = ?"),
-    updateCustomerLineNotes: db.prepare("UPDATE customer_lines SET notes = ? WHERE xui_line_id = ? AND customer_telegram_id = ?"),
 
     // ── Support topics ──
     getSupportTopic: db.prepare<[number]>("SELECT * FROM support_topics WHERE customer_telegram_id = ?"),
@@ -267,8 +229,4 @@ export function initDb(path: string) {
   };
 
   return { db, ...stmts };
-}
-
-export function generateToken(): string {
-  return crypto.randomBytes(16).toString("hex");
 }

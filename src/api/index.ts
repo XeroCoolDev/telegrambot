@@ -10,7 +10,7 @@ import { registerCreditRoutes, registerBtcpayWebhook } from "./credits.js";
 import { registerAdminRoutes } from "./admin.js";
 import { registerResellerCustomerRoutes, createCustomerApi } from "./customer.js";
 
-export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
+export function createApp(db: AppDb, bot: Bot) {
   const app = new Hono();
 
   // Reseller API (authenticated)
@@ -20,7 +20,7 @@ export function createApp(db: AppDb, bot: Bot, customerBot?: Bot) {
   registerLineRoutes(api, db);
   registerCreditRoutes(api, db);
   registerAdminRoutes(api, db);
-  registerResellerCustomerRoutes(api, db, customerBot);
+  registerResellerCustomerRoutes(api, db);
 
   // Customer API (separate auth)
   const customerApi = createCustomerApi(db);

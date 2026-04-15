@@ -1,46 +1,14 @@
 import { Hono, type Context, type Next } from "hono";
-import type { Bot } from "grammy";
 import type { AppDb } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { validateInitData } from "../services/telegram-auth.js";
 import { isRateLimited } from "../services/rate-limit.js";
-import { generateClaimToken } from "../services/claim-token.js";
 import type { AuthEnv } from "./auth.js";
 
 export type CustomerEnv = { Variables: { customerTelegramId: number } };
 
-/** Register the /customer/generate-token endpoint on the reseller API (authenticated) */
-export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb, _customerBot?: Bot) {
-  api.post("/customer/generate-token", async (c) => {
-    const xuiUserId = c.get("xuiUserId");
-    const tgId = c.get("telegramId");
-    if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
-
-    const shareEnabledIds = new Set(
-      (process.env.CUSTOMER_TELEGRAM_IDS || "")
-        .split(",")
-        .map((s) => Number(s.trim()))
-        .filter(Number.isFinite)
-    );
-    if (!shareEnabledIds.has(tgId)) {
-      return c.json({ error: "Customer sharing not enabled for your account" }, 403);
-    }
-
-    const { lineId } = await c.req.json<{ lineId: string }>();
-
-    const xuiApiKey = c.get("xuiApiKey");
-    const lineData = await xui.getLineAsReseller(xuiApiKey, lineId);
-    if (!lineData) return c.json({ error: "Line not found" }, 404);
-
-    const token = generateClaimToken(lineId);
-    const botUsername = process.env.CUSTOMER_BOT_USERNAME || "";
-
-    return c.json({
-      token,
-      link: botUsername ? `https://t.me/${botUsername}?start=${token}` : token,
-    });
-  });
-
+/** Register reseller-side endpoints for managing customer claims */
+export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
   // List customers linked to a given line (reseller must own it)
   api.get("/customer/line-claims/:lineId", async (c) => {
     const xuiUserId = c.get("xuiUserId");

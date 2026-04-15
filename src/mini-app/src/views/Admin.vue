@@ -6,12 +6,10 @@ import { api, useAsync } from "../composables/useApi";
 const router = useRouter();
 const tg = window.Telegram.WebApp;
 
-const tab = ref<"users" | "payments" | "customers">("users");
+const tab = ref<"users" | "payments">("users");
 const { data: users, refresh: refreshUsers } = useAsync(() => api.adminGetUsers());
 onActivated(() => refreshUsers());
 const { data: payments } = useAsync(() => api.adminGetPayments());
-const { data: customers } = useAsync(() => api.adminGetCustomers());
-const { data: customerLines } = useAsync(() => api.adminGetCustomerLines());
 
 // Link form
 const linkTgId = ref("");
@@ -52,7 +50,6 @@ function openUser(telegramId: number) {
     <div class="tabs">
       <button class="tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
       <button class="tab" :class="{ active: tab === 'payments' }" @click="tab = 'payments'">Payments</button>
-      <button class="tab" :class="{ active: tab === 'customers' }" @click="tab = 'customers'">Customers</button>
     </div>
 
     <!-- Users tab -->
@@ -112,36 +109,6 @@ function openUser(telegramId: number) {
       </div>
     </template>
 
-    <!-- Customers tab -->
-    <template v-if="tab === 'customers'">
-      <div v-if="!customers" class="empty-state"><p>Loading...</p></div>
-      <div v-else-if="customers.length === 0" class="empty-state"><p>No customers yet.</p></div>
-      <div v-else>
-        <div v-for="c in customers" :key="c.telegram_id" class="card">
-          <div class="card-row">
-            <div>
-              <div style="font-weight: 600; font-size: 14px">{{ c.username || c.first_name || 'Unknown' }}</div>
-              <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">TG: {{ c.telegram_id }}</div>
-            </div>
-            <span style="font-size: 12px; color: var(--tg-hint)">{{ c.created_at }}</span>
-          </div>
-        </div>
-
-        <div v-if="customerLines && customerLines.length > 0" style="margin-top: 16px">
-          <div class="section-header">Customer Lines</div>
-          <div v-for="cl in customerLines" :key="cl.xui_line_id" class="card">
-            <div class="card-row">
-              <div>
-                <div style="font-weight: 600; font-size: 14px">Line {{ cl.xui_line_id }}</div>
-                <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
-                  Customer: {{ cl.customer_username || cl.customer_telegram_id || 'unlinked' }} · Reseller: {{ cl.reseller_xui_user_id }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </template>
   </div>
 </template>
 
