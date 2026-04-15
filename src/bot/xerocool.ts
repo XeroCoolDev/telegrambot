@@ -130,15 +130,18 @@ export function createXerocoolBot(db: AppDb) {
     }
 
     const [telegramId, xuiUserId] = args;
-    const targetUser = db.getUser.get(Number(telegramId)) as DbUser | undefined;
-    if (!targetUser) {
-      return ctx.reply(`No user found with Telegram ID ${telegramId}. They need to /start first.`);
-    }
 
     // Verify the XUI user exists
     const xuiUser = await xui.getUser(xuiUserId);
     if (!xuiUser) {
       return ctx.reply(`XUI user ID ${xuiUserId} not found.`);
+    }
+
+    // Pre-create the user row if they haven't /start'd yet — username and
+    // first_name fill in on their first interaction with the bot.
+    const targetUser = db.getUser.get(Number(telegramId)) as DbUser | undefined;
+    if (!targetUser) {
+      db.upsertUser.run(Number(telegramId), null, null);
     }
 
     db.linkXui.run(xuiUserId, xuiUser.api_key, Number(telegramId));

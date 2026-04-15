@@ -29,11 +29,15 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId, xuiUserId } = await c.req.json<{ telegramId: number; xuiUserId: string }>();
 
-    const targetUser = db.getUser.get(telegramId) as DbUser | undefined;
-    if (!targetUser) return c.json({ error: "User not found. They need to /start first." }, 404);
-
     const xuiUser = await xui.getUser(xuiUserId);
     if (!xuiUser) return c.json({ error: "XUI user not found" }, 404);
+
+    // Pre-create the user row if they haven't /start'd yet — username and
+    // first_name will be filled in on their first interaction with the bot.
+    const targetUser = db.getUser.get(telegramId) as DbUser | undefined;
+    if (!targetUser) {
+      db.upsertUser.run(telegramId, null, null);
+    }
 
     db.linkXui.run(xuiUserId, xuiUser.api_key, telegramId);
     return c.json({ success: true, username: xuiUser.username });
