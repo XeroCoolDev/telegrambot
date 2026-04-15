@@ -15,6 +15,38 @@ export function createXerocoolBot(db: AppDb) {
     return ADMIN_IDS.has(userId);
   }
 
+  // Default menu button (bot-level): Dashboard web-app button. This also makes
+  // the "Open" button appear in the Telegram chat-list preview for the bot.
+  // Per-chat override flips it back to commands for unlinked users on /start.
+  if (WEBAPP_URL) {
+    bot.api
+      .setChatMenuButton({
+        menu_button: { type: "web_app", text: "Dashboard", web_app: { url: WEBAPP_URL } },
+      })
+      .catch((err) => console.error("[xerocool-bot] setChatMenuButton default failed:", err));
+  }
+
+  async function setDashboardButton(chatId: number, enabled: boolean) {
+    if (!WEBAPP_URL) return;
+    try {
+      if (enabled) {
+        await bot.api.setChatMenuButton({
+          chat_id: chatId,
+          menu_button: { type: "web_app", text: "Dashboard", web_app: { url: WEBAPP_URL } },
+        });
+      } else {
+        // Unlinked: override per-chat back to commands so the Dashboard
+        // button doesn't show until they're linked.
+        await bot.api.setChatMenuButton({
+          chat_id: chatId,
+          menu_button: { type: "commands" },
+        });
+      }
+    } catch (err) {
+      console.error("[xerocool-bot] setChatMenuButton chat failed:", err);
+    }
+  }
+
   // Rate limit all incoming messages
   bot.use(async (ctx, next) => {
     const userId = ctx.from?.id;
@@ -35,6 +67,7 @@ export function createXerocoolBot(db: AppDb) {
     const user = db.getUser.get(tgUser.id) as DbUser | undefined;
 
     if (!user?.xui_user_id) {
+      await setDashboardButton(tgUser.id, false);
       await ctx.reply(
         `Your Telegram User ID is: \`${tgUser.id}\`\n\n` +
           `Please provide this ID to an administrator to register your account.`,
@@ -45,12 +78,11 @@ export function createXerocoolBot(db: AppDb) {
 
     // `payload` currently unused but kept for future deep-link flows
     void payload;
-    const keyboard = new InlineKeyboard().webApp("📱 Open Dashboard", WEBAPP_URL);
+    await setDashboardButton(tgUser.id, true);
 
     await ctx.reply(
       `Welcome back${tgUser.first_name ? `, ${tgUser.first_name}` : ""}! 👋\n\n` +
-        `Tap below to manage your subscriptions and credits.`,
-      { reply_markup: keyboard }
+        `Tap the Dashboard button below to manage your subscriptions and credits.`
     );
   });
 
