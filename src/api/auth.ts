@@ -14,14 +14,14 @@ export type AuthEnv = {
 };
 
 export const ADMIN_IDS = new Set(
-  (process.env.ADMIN_TELEGRAM_IDS || "")
+  (process.env.XEROCOOL_ADMIN_TELEGRAM_IDS || "")
     .split(",")
     .map((s) => Number(s.trim()))
     .filter(Boolean)
 );
 
-/** Reseller auth middleware — validates initData, auto-registers admins */
-export function resellerAuthMiddleware(db: AppDb) {
+/** XeroCool (reseller) auth middleware — validates initData, auto-registers admins */
+export function xerocoolAuthMiddleware(db: AppDb) {
   return async (c: Context<AuthEnv>, next: Next) => {
     const initData = c.req.header("X-Telegram-Init-Data");
     if (!initData) return c.json({ error: "Unauthorized" }, 401);

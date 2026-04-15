@@ -4,7 +4,7 @@ import { isRateLimited } from "../services/rate-limit.js";
 import { verifyClaimToken, generateClaimToken } from "../services/claim-token.js";
 import * as xui from "../services/xui/index.js";
 
-const SUPPORT_CHAT_ID = process.env.SUPPORT_FORUM_CHAT_ID || "";
+const SUPPORT_CHAT_ID = process.env.XPOSED_SUPPORT_CHAT_ID || "";
 
 /** Render a single line's credentials as a chat message. */
 async function formatLineMessage(lineId: string): Promise<string | null> {
@@ -25,14 +25,14 @@ function escapeHtml(s: string): string {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function createCustomerBot(db: AppDb) {
-  const bot = new Bot(process.env.CUSTOMER_BOT_TOKEN!);
-  const WEBAPP_URL = process.env.CUSTOMER_WEBAPP_URL || "";
+export function createXposedBot(db: AppDb) {
+  const bot = new Bot(process.env.XPOSED_BOT_TOKEN!);
+  const WEBAPP_URL = process.env.XPOSED_WEBAPP_URL || "";
 
   // Default menu: commands list for everyone (overridden per-chat once linked)
   bot.api
     .setChatMenuButton({ menu_button: { type: "commands" } })
-    .catch((err) => console.error("[customer-bot] setChatMenuButton default failed:", err));
+    .catch((err) => console.error("[xposed-bot] setChatMenuButton default failed:", err));
 
   // Clear any previously-registered scoped commands (we used to register /link;
   // autocomplete auto-sends without args so it's unwanted)
@@ -58,7 +58,7 @@ export function createCustomerBot(db: AppDb) {
         });
       }
     } catch (err) {
-      console.error("[customer-bot] setChatMenuButton chat failed:", err);
+      console.error("[xposed-bot] setChatMenuButton chat failed:", err);
     }
   }
 
@@ -207,7 +207,7 @@ export function createCustomerBot(db: AppDb) {
       try {
         await bot.api.setMessageReaction(mapping.customer_telegram_id, mapping.customer_msg_id, reactions);
       } catch (err) {
-        console.error("[customer-bot] Failed to mirror reaction to customer:", err);
+        console.error("[xposed-bot] Failed to mirror reaction to customer:", err);
       }
       return;
     }
@@ -221,7 +221,7 @@ export function createCustomerBot(db: AppDb) {
       try {
         await bot.api.setMessageReaction(Number(SUPPORT_CHAT_ID), row.group_msg_id, reactions);
       } catch (err) {
-        console.error("[customer-bot] Failed to mirror reaction to topic:", err);
+        console.error("[xposed-bot] Failed to mirror reaction to topic:", err);
       }
     }
   });
@@ -265,7 +265,7 @@ export function createCustomerBot(db: AppDb) {
             await bot.api.deleteMessage(ctx.chat.id, ctx.message.message_id);
           } catch { /* best-effort */ }
         } catch (err) {
-          console.error("[customer-bot] Failed to send claim link:", err);
+          console.error("[xposed-bot] Failed to send claim link:", err);
           await ctx.reply(
             `Couldn't send the link — the customer may need to open the bot first.`,
             { message_thread_id: threadId }
@@ -293,7 +293,7 @@ export function createCustomerBot(db: AppDb) {
           try {
             await bot.api.deleteMessage(mapping.customer_telegram_id, mapping.customer_msg_id);
           } catch (err) {
-            console.error("[customer-bot] Failed to delete customer-side message:", err);
+            console.error("[xposed-bot] Failed to delete customer-side message:", err);
           }
           db.deleteRelayedMessage.run(replyTo.message_id);
         }
@@ -302,7 +302,7 @@ export function createCustomerBot(db: AppDb) {
         try {
           await bot.api.deleteMessage(ctx.chat.id, replyTo.message_id);
         } catch (err) {
-          console.error("[customer-bot] Failed to delete group-side message:", err);
+          console.error("[xposed-bot] Failed to delete group-side message:", err);
         }
         try {
           await bot.api.deleteMessage(ctx.chat.id, ctx.message.message_id);
@@ -334,7 +334,7 @@ export function createCustomerBot(db: AppDb) {
         });
         db.recordRelayedMessage.run(ctx.message.message_id, customerTgId, sent.message_id);
       } catch (err) {
-        console.error("[customer-bot] Failed to relay reply:", err);
+        console.error("[xposed-bot] Failed to relay reply:", err);
       }
       return;
     }
@@ -371,7 +371,7 @@ export function createCustomerBot(db: AppDb) {
         threadToCustomer.set(topic.message_thread_id, tgUser.id);
         return topic.message_thread_id;
       } catch (err) {
-        console.error("[customer-bot] Failed to create topic:", err);
+        console.error("[xposed-bot] Failed to create topic:", err);
         return null;
       }
     }
@@ -455,7 +455,7 @@ export function createCustomerBot(db: AppDb) {
           threadToCustomer.delete(threadId);
           continue;
         }
-        console.error("[customer-bot] Failed to send to topic:", err);
+        console.error("[xposed-bot] Failed to send to topic:", err);
         await ctx.reply("Unable to reach support right now. Please try again later.");
         return;
       }
@@ -463,7 +463,7 @@ export function createCustomerBot(db: AppDb) {
   });
 
   bot.catch((err) => {
-    console.error("[customer-bot] Error:", err.message);
+    console.error("[xposed-bot] Error:", err.message);
   });
 
   return bot;

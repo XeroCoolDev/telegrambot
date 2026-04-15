@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
-import { createBot } from "./bot/index.js";
-import { createCustomerBot } from "./bot/customer.js";
+import { createXerocoolBot } from "./bot/xerocool.js";
+import { createXposedBot } from "./bot/xposed.js";
 import { createApp } from "./api/index.js";
 import { startScheduler } from "./scheduler/index.js";
 import { initDb } from "./db/index.js";
@@ -11,32 +11,32 @@ async function main() {
   const db = initDb(process.env.DATABASE_PATH || "./data/bot.db");
   console.log("[db] Initialised");
 
-  const bot = createBot(db);
-  bot.start({
+  const xerocoolBot = createXerocoolBot(db);
+  xerocoolBot.start({
     allowed_updates: ["message", "callback_query", "chat_member", "my_chat_member"],
-    onStart: () => console.log("[bot] Reseller bot running (polling)"),
+    onStart: () => console.log("[bot] XeroCool bot running (polling)"),
   });
 
-  let customerBot: ReturnType<typeof createCustomerBot> | undefined;
-  if (process.env.CUSTOMER_BOT_TOKEN) {
-    customerBot = createCustomerBot(db);
-    customerBot.start({
+  let xposedBot: ReturnType<typeof createXposedBot> | undefined;
+  if (process.env.XPOSED_BOT_TOKEN) {
+    xposedBot = createXposedBot(db);
+    xposedBot.start({
       allowed_updates: ["message", "callback_query", "my_chat_member", "message_reaction"],
-      onStart: () => console.log("[bot] Customer bot running (polling)"),
+      onStart: () => console.log("[bot] Xposed bot running (polling)"),
     });
   }
 
-  const app = createApp(db, bot, customerBot);
+  const app = createApp(db, xerocoolBot, xposedBot);
   serve({ fetch: app.fetch, port: PORT }, () => {
     console.log(`[api] Listening on :${PORT}`);
   });
 
-  startScheduler(db, bot);
+  startScheduler(db, xerocoolBot);
 
   const shutdown = () => {
     console.log("[app] Shutting down...");
-    bot.stop();
-    customerBot?.stop();
+    xerocoolBot.stop();
+    xposedBot?.stop();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

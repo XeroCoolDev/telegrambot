@@ -6,7 +6,7 @@ async function request<T>(
   path: string,
   opts: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`/xerocool${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
@@ -143,11 +143,11 @@ export const api = {
 
   getLineClaims: (lineId: string) =>
     request<Array<{ telegram_id: number; username: string | null; first_name: string | null; created_at: string }>>(
-      `/customer/line-claims/${lineId}`
+      `/xerocool/line-claims/${lineId}`
     ),
 
   unclaimCustomer: (lineId: string, telegramId: number) =>
-    request<{ success: boolean }>("/customer/unclaim", {
+    request<{ success: boolean }>("/xerocool/unclaim", {
       method: "POST",
       body: JSON.stringify({ lineId, telegramId }),
     }),

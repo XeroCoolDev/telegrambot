@@ -2,12 +2,13 @@
 
 ## Stack
 - Server: Node.js + TypeScript, grammY (bot), Hono (API), better-sqlite3, node-cron
-- Mini App: Vue 3 + Vite SPA (src/mini-app/)
+- Mini Apps: Vue 3 + Vite SPAs — `src/xerocool-app/` (reseller) and `src/xposed-app/` (customer)
 - Deployment: Docker on Saltbox behind Traefik
 
 ## Commands
 - `pnpm dev` — run server with tsx watch
-- `cd src/mini-app && pnpm dev` — run mini app dev server
+- `cd src/xerocool-app && pnpm dev` — run XeroCool (reseller) mini-app dev server
+- `cd src/xposed-app && pnpm dev` — run Xposed (customer) mini-app dev server
 - `pnpm build` — compile server TypeScript
 - `docker compose up -d --build` — deploy on Saltbox
 

@@ -7,15 +7,17 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue()],
+    base: "/",
     build: {
       outDir: "dist",
       emptyOutDir: true,
     },
     server: {
+      port: 5174,
       host: true,
       allowedHosts: true,
       proxy: {
-        "/api": `http://localhost:${apiPort}`,
+        "/xposed": `http://localhost:${apiPort}`,
       },
     },
   };

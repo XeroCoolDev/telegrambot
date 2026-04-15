@@ -11,7 +11,7 @@ export function registerMeRoutes(api: Hono<AuthEnv>) {
     const permissions = parsePermissions(c.get("permissions"));
 
     const shareEnabledIds = new Set(
-      (process.env.CUSTOMER_TELEGRAM_IDS || "")
+      (process.env.XPOSED_AUTHORISED_TELEGRAM_IDS || "")
         .split(",")
         .map((s) => Number(s.trim()))
         .filter(Number.isFinite)

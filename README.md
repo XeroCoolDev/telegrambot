@@ -35,7 +35,7 @@ Telegram bot and mini app for managing xui.one IPTV subscriptions with BTCPay Bi
 ### Setup
 ```bash
 pnpm install
-cd src/mini-app && pnpm install && cd ../..
+cd src/xerocool-app && pnpm install && cd ../..
 cp .env.example .env
 # Fill in your values
 ```
@@ -43,14 +43,14 @@ cp .env.example .env
 ### Run
 ```bash
 pnpm dev                          # Server + bot on :3000
-cd src/mini-app && pnpm dev       # Mini app on :5173 (separate terminal)
+cd src/xerocool-app && pnpm dev       # Mini app on :5173 (separate terminal)
 ```
 
 ### Tunnel (for Telegram Mini App)
 ```bash
 ngrok http 3000
 ```
-Set the ngrok URL as `WEBAPP_URL` in `.env` and in BotFather's Menu Button.
+Set the ngrok URL as `XEROCOOL_WEBAPP_URL` in `.env` and in BotFather's Menu Button.
 
 ## Deployment (Saltbox)
 
@@ -77,7 +77,7 @@ src/
 │   ├── telegram-auth.ts     # initData HMAC-SHA256 validation
 │   ├── notifications.ts     # Payment notifications (user + admin)
 │   └── rate-limit.ts        # In-memory rate limiter
-├── mini-app/                # Reseller Vue 3 SPA
+├── xerocool-app/                # XeroCool (reseller) Vue 3 SPA
 │   └── src/views/
 │       ├── Dashboard.vue    # Stats, search, filtered line list
 │       ├── LineDetails.vue  # Credentials, toggles, share, delete
@@ -86,7 +86,7 @@ src/
 │       ├── AddConnections.vue # Connection upgrade pricing
 │       ├── BuyCredits.vue   # BTCPay credit packages + pending invoices
 │       └── Admin.vue        # User management, payments, customers
-└── customer-app/            # Customer Vue 3 SPA
+└── xposed-app/            # Xposed (customer) Vue 3 SPA
     └── src/views/
         ├── Dashboard.vue    # Line list with search + status filter
         └── LineDetails.vue  # Connection details, notes, adult toggle

@@ -1,10 +1,11 @@
 {
-  "name": "customer-app",
+  "name": "telegrambot-xerocool-app",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "lucide-vue-next": "^1.0.0",

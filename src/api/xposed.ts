@@ -6,14 +6,14 @@ import { validateInitData } from "../services/telegram-auth.js";
 import { isRateLimited } from "../services/rate-limit.js";
 import type { AuthEnv } from "./auth.js";
 
-export type CustomerEnv = { Variables: { customerTelegramId: number } };
+export type XposedEnv = { Variables: { xposedTelegramId: number } };
 
 const RENEWAL_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** Register reseller-side endpoints for managing customer claims */
-export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
+export function registerXerocoolXposedRoutes(api: Hono<AuthEnv>, db: AppDb) {
   // List customers linked to a given line (reseller must own it)
-  api.get("/customer/line-claims/:lineId", async (c) => {
+  api.get("/line-claims/:lineId", async (c) => {
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
 
@@ -32,7 +32,7 @@ export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
   });
 
   // Unlink a specific tg id from a line (reseller must own the line)
-  api.post("/customer/unclaim", async (c) => {
+  api.post("/unclaim", async (c) => {
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
 
@@ -49,14 +49,14 @@ export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
 }
 
 /** Build the customer API (separate auth, own middleware) */
-export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEnv> {
-  const customerApi = new Hono<CustomerEnv>();
+export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
+  const xposedApi = new Hono<XposedEnv>();
 
-  customerApi.use("/*", async (c: Context<CustomerEnv>, next: Next) => {
+  xposedApi.use("/*", async (c: Context<XposedEnv>, next: Next) => {
     const initData = c.req.header("X-Telegram-Init-Data");
     if (!initData) return c.json({ error: "Unauthorized" }, 401);
 
-    const customerToken = process.env.CUSTOMER_BOT_TOKEN;
+    const customerToken = process.env.XPOSED_BOT_TOKEN;
     if (!customerToken) return c.json({ error: "Customer bot not configured" }, 503);
 
     const validated = validateInitData(initData, customerToken);
@@ -66,12 +66,12 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
       return c.json({ error: "Too many requests" }, 429);
     }
 
-    c.set("customerTelegramId", validated.user.id);
+    c.set("xposedTelegramId", validated.user.id);
     await next();
   });
 
-  customerApi.get("/lines", async (c) => {
-    const tgId = c.get("customerTelegramId");
+  xposedApi.get("/lines", async (c) => {
+    const tgId = c.get("xposedTelegramId");
     const rows = db.getClaimedLineIds.all(tgId) as { xui_line_id: string }[];
     if (rows.length === 0) return c.json([]);
 
@@ -95,8 +95,8 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
     );
   });
 
-  customerApi.get("/line/:id", async (c) => {
-    const tgId = c.get("customerTelegramId");
+  xposedApi.get("/line/:id", async (c) => {
+    const tgId = c.get("xposedTelegramId");
     const lineId = c.req.param("id");
 
     if (!db.isLineClaimedBy.get(tgId, lineId)) {
@@ -128,8 +128,8 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
     });
   });
 
-  customerApi.post("/toggle-adult", async (c) => {
-    const tgId = c.get("customerTelegramId");
+  xposedApi.post("/toggle-adult", async (c) => {
+    const tgId = c.get("xposedTelegramId");
     const { lineId, enable } = await c.req.json<{ lineId: string; enable: boolean }>();
 
     if (!db.isLineClaimedBy.get(tgId, lineId)) {
@@ -148,8 +148,8 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
     return c.json({ success: true, adultEnabled: enable });
   });
 
-  customerApi.post("/request-renewal", async (c) => {
-    const tgId = c.get("customerTelegramId");
+  xposedApi.post("/request-renewal", async (c) => {
+    const tgId = c.get("xposedTelegramId");
     const { lineId } = await c.req.json<{ lineId: string }>();
     if (!lineId) return c.json({ error: "Missing lineId" }, 400);
 
@@ -169,8 +169,8 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
       }
     }
 
-    const supportChatId = process.env.SUPPORT_FORUM_CHAT_ID;
-    if (!customerBot || !supportChatId) {
+    const supportChatId = process.env.XPOSED_SUPPORT_CHAT_ID;
+    if (!xposedBot || !supportChatId) {
       return c.json({ error: "Support is not configured." }, 503);
     }
 
@@ -195,7 +195,7 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
     // Post to the customer's DM first so we have a message id to thread back to
     let customerDmMsgId: number | undefined;
     try {
-      const sent = await customerBot.api.sendMessage(tgId, msg, { parse_mode: "HTML" });
+      const sent = await xposedBot.api.sendMessage(tgId, msg, { parse_mode: "HTML" });
       customerDmMsgId = sent.message_id;
     } catch (err) {
       console.error("[api] request-renewal customer-side send failed:", err);
@@ -204,7 +204,7 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
     // Post into the topic — if we have a customer-side msg id, record the
     // mapping so reseller replies to this message thread back to the customer
     try {
-      const sent = await customerBot.api.sendMessage(Number(supportChatId), msg, {
+      const sent = await xposedBot.api.sendMessage(Number(supportChatId), msg, {
         message_thread_id: topic.thread_id,
         parse_mode: "HTML",
       });
@@ -220,5 +220,5 @@ export function createCustomerApi(db: AppDb, customerBot?: Bot): Hono<CustomerEn
     return c.json({ success: true });
   });
 
-  return customerApi;
+  return xposedApi;
 }

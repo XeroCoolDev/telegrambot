@@ -2,14 +2,14 @@ import type { XuiLine } from "./types.js";
 import { timedFetch, buildResellerEditParams } from "./client.js";
 import { getLineAsReseller } from "./lines.js";
 
-const ADULT_BOUQUET_IDS = new Set(
-  (process.env.ADULT_BOUQUET_IDS || "").split(",").map((s) => s.trim()).filter(Boolean)
+const XUI_ADULT_BOUQUET_IDS = new Set(
+  (process.env.XUI_ADULT_BOUQUET_IDS || "").split(",").map((s) => s.trim()).filter(Boolean)
 );
 
 export function hasAdultBouquets(line: XuiLine): boolean {
-  if (ADULT_BOUQUET_IDS.size === 0) return false;
+  if (XUI_ADULT_BOUQUET_IDS.size === 0) return false;
   const bouquets: (string | number)[] = JSON.parse(line.bouquet || "[]");
-  return bouquets.some((id) => ADULT_BOUQUET_IDS.has(String(id)));
+  return bouquets.some((id) => XUI_ADULT_BOUQUET_IDS.has(String(id)));
 }
 
 export async function toggleAdultContent(
@@ -17,7 +17,7 @@ export async function toggleAdultContent(
   lineId: string,
   enable: boolean
 ): Promise<boolean> {
-  if (ADULT_BOUQUET_IDS.size === 0) return false;
+  if (XUI_ADULT_BOUQUET_IDS.size === 0) return false;
 
   const lineData = await getLineAsReseller(resellerApiKey, lineId);
   if (!lineData) return false;
@@ -27,10 +27,10 @@ export async function toggleAdultContent(
 
   if (enable) {
     const existing = new Set(bouquets.map(String));
-    const toAdd = [...ADULT_BOUQUET_IDS].filter((id) => !existing.has(id)).map(Number);
+    const toAdd = [...XUI_ADULT_BOUQUET_IDS].filter((id) => !existing.has(id)).map(Number);
     updated = [...bouquets, ...toAdd];
   } else {
-    updated = bouquets.filter((id) => !ADULT_BOUQUET_IDS.has(String(id)));
+    updated = bouquets.filter((id) => !XUI_ADULT_BOUQUET_IDS.has(String(id)));
   }
 
   // Build params and override the auto-appended bouquet with the updated list
