@@ -171,7 +171,7 @@ export function initDb(path: string) {
       "DELETE FROM payments WHERE status IN ('expired', 'invalid', 'failed') AND created_at <= datetime('now', '-90 days')"
     ),
     getPaymentHistory: db.prepare<[number]>(
-      "SELECT * FROM payments WHERE telegram_id = ? AND status IN ('settled', 'failed', 'expired', 'invalid') ORDER BY created_at DESC LIMIT 50"
+      "SELECT * FROM payments WHERE telegram_id = ? AND status IN ('settled', 'failed', 'expired', 'invalid') ORDER BY created_at DESC LIMIT 5"
     ),
     updatePaymentStatus: db.prepare("UPDATE payments SET status = ? WHERE btcpay_invoice_id = ?"),
     setPaymentStatusMessageId: db.prepare(

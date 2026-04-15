@@ -58,9 +58,10 @@ function statusLabel(s: string): string {
 }
 
 function fmtDate(s: string): string {
-  return new Date(s + "Z").toLocaleDateString("en-GB", {
+  const d = new Date(s + "Z");
+  return d.toLocaleDateString("en-GB", {
     day: "2-digit", month: "short", year: "numeric",
-  });
+  }) + " " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
 function toggleHistory() {
