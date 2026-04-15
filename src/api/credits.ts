@@ -42,6 +42,23 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
     );
   });
 
+  // GET /payment-history — last 50 settled/failed/expired/invalid payments
+  api.get("/payment-history", async (c) => {
+    const tgId = c.get("telegramId");
+    const payments = db.getPaymentHistory.all(tgId) as DbPayment[];
+    return c.json(
+      payments.map((p) => ({
+        invoiceId: p.btcpay_invoice_id,
+        credits: p.credits,
+        amount: p.amount,
+        currency: p.currency,
+        title: p.item_title,
+        status: p.status,
+        createdAt: p.created_at,
+      }))
+    );
+  });
+
   // POST /buy-credits — create BTCPay invoice for a POS item
   api.post("/buy-credits", async (c) => {
     const permErr = requirePerm(c, "canBuyCredits");

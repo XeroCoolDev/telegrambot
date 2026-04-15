@@ -7,7 +7,9 @@ const tg = window.Telegram.WebApp;
 
 const { data: options, loading, error } = useAsync(() => api.getCreditOptions());
 const { data: pending, loading: pendingLoading, refresh: refreshPending } = useAsync(() => api.getPendingPayments());
+const { data: history, refresh: refreshHistory } = useAsync(() => api.getPaymentHistory());
 const purchasing = ref<string | null>(null);
+const showHistory = ref(false);
 
 // Poll pending payments every 5s while on this page so status flips in real time
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -47,8 +49,23 @@ function statusLabel(s: string): string {
     case "pending": return "⏳ Awaiting payment";
     case "processing": return "⏳ Awaiting confirmations";
     case "settling": return "⏳ Settling…";
+    case "settled": return "✅ Settled";
+    case "expired": return "⏰ Expired";
+    case "invalid": return "❌ Invalid";
+    case "failed": return "⚠️ Failed";
     default: return s;
   }
+}
+
+function fmtDate(s: string): string {
+  return new Date(s + "Z").toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+  });
+}
+
+function toggleHistory() {
+  showHistory.value = !showHistory.value;
+  if (showHistory.value) refreshHistory();
 }
 
 function timeAgo(dateStr: string): string {
@@ -129,12 +146,45 @@ function timeAgo(dateStr: string): string {
         </div>
       </div>
     </template>
+
+    <!-- Payment history -->
+    <div style="margin-top: 16px; text-align: center">
+      <button class="btn-history" @click="toggleHistory">
+        {{ showHistory ? 'Hide payment history' : 'Show payment history' }}
+      </button>
+    </div>
+    <template v-if="showHistory">
+      <div v-if="!history || history.length === 0" class="empty-state" style="margin-top: 8px">
+        <p>No past payments yet.</p>
+      </div>
+      <div v-else>
+        <div v-for="p in history" :key="p.invoiceId" class="card">
+          <div class="card-row">
+            <div>
+              <div style="font-weight: 600; font-size: 14px">{{ p.title }}</div>
+              <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
+                {{ fmtDate(p.createdAt) }} · {{ p.amount }} {{ p.currency }} · {{ statusLabel(p.status) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .pending-card {
   border-left: 3px solid var(--tg-link);
+}
+.btn-history {
+  background: none;
+  border: none;
+  color: var(--tg-link);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 12px;
 }
 .pending-badge {
   font-size: 13px;

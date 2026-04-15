@@ -63,7 +63,6 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
       daysLeft: xui.daysUntilExpiry(lineData.exp_date),
       maxConnections: lineData.max_connections,
       isTrial: lineData.is_trial === "1",
-      lastIp: lineData.last_ip || null,
       contact: lineData.contact || null,
       resellerNotes: lineData.reseller_notes || null,
       adultEnabled: xui.hasAdultBouquets(lineData),

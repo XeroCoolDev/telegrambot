@@ -167,6 +167,12 @@ export function initDb(path: string) {
     expireOldPending: db.prepare(
       "UPDATE payments SET status = 'expired' WHERE status = 'pending' AND created_at <= datetime('now', '-24 hours')"
     ),
+    pruneTerminalPayments: db.prepare(
+      "DELETE FROM payments WHERE status IN ('expired', 'invalid', 'failed') AND created_at <= datetime('now', '-90 days')"
+    ),
+    getPaymentHistory: db.prepare<[number]>(
+      "SELECT * FROM payments WHERE telegram_id = ? AND status IN ('settled', 'failed', 'expired', 'invalid') ORDER BY created_at DESC LIMIT 50"
+    ),
     updatePaymentStatus: db.prepare("UPDATE payments SET status = ? WHERE btcpay_invoice_id = ?"),
     setPaymentStatusMessageId: db.prepare(
       "UPDATE payments SET status_message_id = ? WHERE btcpay_invoice_id = ?"

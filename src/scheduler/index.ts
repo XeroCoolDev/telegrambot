@@ -23,6 +23,13 @@ export function startScheduler(db: AppDb, bot: Bot) {
       console.log(`[scheduler] Expired ${expired.changes} stale pending payments`);
     }
 
+    // Prune terminal payments older than 90 days (keeps settled rows forever
+    // for audit; only removes expired/invalid/failed clutter)
+    const pruned = db.pruneTerminalPayments.run();
+    if (pruned.changes > 0) {
+      console.log(`[scheduler] Pruned ${pruned.changes} old terminal payments`);
+    }
+
     const linkedUsers = db.getAllLinkedUsers.all() as DbUser[];
     const adminSummary: { username: string; count: number }[] = [];
 

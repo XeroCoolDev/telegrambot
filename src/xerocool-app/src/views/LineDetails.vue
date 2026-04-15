@@ -90,7 +90,9 @@ let deleteTimer: ReturnType<typeof setInterval> | null = null;
 
 const isExpired = computed(() => {
   if (!line.value) return false;
-  return line.value.daysLeft !== null && line.value.daysLeft <= 0;
+  // Match Dashboard logic: expired only when timestamp is actually in the past.
+  // daysLeft <= 0 falsely flags lines expiring within the next 24h.
+  return line.value.expDate !== null && line.value.expDate * 1000 < Date.now();
 });
 
 function openDeleteModal() {
@@ -223,14 +225,14 @@ async function toggleAdult() {
 
 function statusClass(sub: any) {
   if (sub.status === "disabled") return "status-disabled";
-  if (sub.daysLeft !== null && sub.daysLeft <= 0) return "status-expired";
+  if (sub.expDate !== null && sub.expDate * 1000 < Date.now()) return "status-expired";
   if (sub.daysLeft !== null && sub.daysLeft <= 3) return "status-expiring";
   return "status-active";
 }
 
 function statusLabel(sub: any) {
   if (sub.status === "disabled") return "Disabled";
-  if (sub.daysLeft !== null && sub.daysLeft <= 0) return "Expired";
+  if (sub.expDate !== null && sub.expDate * 1000 < Date.now()) return "Expired";
   return "Active";
 }
 </script>
@@ -286,10 +288,6 @@ function statusLabel(sub: any) {
 
       <!-- Info -->
       <div class="card" style="margin-top: 12px">
-        <div v-if="line.lastIp" class="card-row">
-          <span class="card-label">Last IP</span>
-          <span class="card-value" style="font-family: monospace; font-size: 13px">{{ line.lastIp }}</span>
-        </div>
 
         <template v-if="!editing">
           <div class="card-row">

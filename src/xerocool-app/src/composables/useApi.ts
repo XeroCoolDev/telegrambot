@@ -95,6 +95,11 @@ export const api = {
       "/pending-payments"
     ),
 
+  getPaymentHistory: () =>
+    request<{ invoiceId: string; credits: number; amount: string; currency: string; title: string; status: string; createdAt: string }[]>(
+      "/payment-history"
+    ),
+
   buyCredits: (item: CreditOption & { credits: number }) =>
     request<{ invoiceId: string; checkoutUrl: string }>("/buy-credits", {
       method: "POST",
