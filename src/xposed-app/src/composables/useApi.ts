@@ -6,7 +6,7 @@ async function request<T>(
   path: string,
   opts: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`/customer${path}`, {
+  const res = await fetch(`/xposed${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",

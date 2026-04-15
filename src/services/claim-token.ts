@@ -4,7 +4,7 @@ import { createHmac } from "node:crypto";
  * Signed claim tokens for customer deep-links.
  *
  * Format: `c<lineId>_<sig8>` where sig8 is the first 8 hex chars of
- * HMAC-SHA256(lineId, CUSTOMER_BOT_TOKEN). Fits well within Telegram's
+ * HMAC-SHA256(lineId, XPOSED_BOT_TOKEN). Fits well within Telegram's
  * 64-char deep-link payload limit.
  *
  * Security model: only our backend (which has the bot token) can mint a
@@ -14,8 +14,8 @@ import { createHmac } from "node:crypto";
  */
 
 function secret(): string {
-  const t = process.env.CUSTOMER_BOT_TOKEN;
-  if (!t) throw new Error("CUSTOMER_BOT_TOKEN not set");
+  const t = process.env.XPOSED_BOT_TOKEN;
+  if (!t) throw new Error("XPOSED_BOT_TOKEN not set");
   return t;
 }
 

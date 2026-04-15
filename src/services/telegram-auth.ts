@@ -20,7 +20,7 @@ interface InitData {
  * https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
  */
 export function validateInitData(initDataStr: string, botToken?: string): InitData | null {
-  botToken = botToken || process.env.BOT_TOKEN!;
+  botToken = botToken || process.env.XEROCOOL_BOT_TOKEN!;
   const params = new URLSearchParams(initDataStr);
   const hash = params.get("hash");
   if (!hash) return null;

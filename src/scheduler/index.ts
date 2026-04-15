@@ -78,7 +78,7 @@ export function startScheduler(db: AppDb, bot: Bot) {
     }
 
     // Admin summary of expiring lines
-    const adminChatId = process.env.ADMIN_CHAT_ID;
+    const adminChatId = process.env.XEROCOOL_ADMIN_CHAT_ID;
     if (adminChatId && adminSummary.length > 0) {
       const totalLines = adminSummary.reduce((sum, r) => sum + r.count, 0);
       const tomorrow = new Date();

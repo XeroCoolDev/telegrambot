@@ -4,11 +4,11 @@ import * as xui from "../services/xui/index.js";
 import { isRateLimited } from "../services/rate-limit.js";
 import { notifyPaymentSettled } from "../services/notifications.js";
 
-export function createBot(db: AppDb) {
-  const bot = new Bot(process.env.BOT_TOKEN!);
-  const WEBAPP_URL = process.env.WEBAPP_URL!;
+export function createXerocoolBot(db: AppDb) {
+  const bot = new Bot(process.env.XEROCOOL_BOT_TOKEN!);
+  const WEBAPP_URL = process.env.XEROCOOL_WEBAPP_URL!;
   const ADMIN_IDS = new Set(
-    (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((s) => Number(s.trim())).filter(Boolean)
+    (process.env.XEROCOOL_ADMIN_TELEGRAM_IDS || "").split(",").map((s) => Number(s.trim())).filter(Boolean)
   );
 
   function isAdmin(userId: number): boolean {

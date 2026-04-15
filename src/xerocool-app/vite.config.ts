@@ -7,17 +7,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue()],
-    base: "/c/",
     build: {
       outDir: "dist",
       emptyOutDir: true,
     },
     server: {
-      port: 5174,
       host: true,
       allowedHosts: true,
       proxy: {
-        "/customer": `http://localhost:${apiPort}`,
+        "/xerocool": `http://localhost:${apiPort}`,
       },
     },
   };
