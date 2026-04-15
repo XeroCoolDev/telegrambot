@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { HelpCircle, AlertTriangle, Trash2 } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
@@ -19,34 +19,67 @@ const maxConns = computed(() => user.value?.config?.maxConnections ?? 3);
 
 const toggling = ref(false);
 const togglingEnabled = ref(false);
-const shareLink = ref<string | null>(null);
-const sharing = ref(false);
-const shareCopied = ref(false);
+const claimCopied = ref(false);
 
-async function generateShareLink() {
-  if (!line.value || sharing.value) return;
-  sharing.value = true;
+async function copyClaimCommand() {
+  if (!line.value) return;
   try {
-    const result = await api.generateCustomerToken(line.value.id);
-    shareLink.value = result.link;
+    await navigator.clipboard.writeText(`/link ${line.value.id}`);
+    claimCopied.value = true;
     tg.HapticFeedback.notificationOccurred("success");
-  } catch (e: any) {
+    setTimeout(() => { claimCopied.value = false; }, 2000);
+  } catch {
     tg.HapticFeedback.notificationOccurred("error");
-    tg.showAlert(e.message || "Failed to generate link");
-  } finally {
-    sharing.value = false;
   }
 }
 
-async function copyShareLink() {
-  if (!shareLink.value) return;
+// Linked customers
+type Claim = { telegram_id: number; username: string | null; first_name: string | null; created_at: string };
+const claims = ref<Claim[]>([]);
+const claimsLoading = ref(false);
+const unclaiming = ref<number | null>(null);
+
+async function loadClaims() {
+  if (!user.value?.canShareWithCustomers || !line.value) return;
+  claimsLoading.value = true;
   try {
-    await navigator.clipboard.writeText(shareLink.value);
-    shareCopied.value = true;
-    tg.HapticFeedback.notificationOccurred("success");
-    setTimeout(() => { shareCopied.value = false; }, 2000);
+    claims.value = await api.getLineClaims(line.value.id);
   } catch {
+    claims.value = [];
+  } finally {
+    claimsLoading.value = false;
+  }
+}
+
+function claimLabel(c: Claim): string {
+  // @username matches the support-topic title, easiest to identify at a glance
+  if (c.username) return `@${c.username}`;
+  if (c.first_name) return c.first_name;
+  return `ID ${c.telegram_id}`;
+}
+
+watch([line, () => user.value?.canShareWithCustomers], () => loadClaims());
+
+async function unclaim(c: Claim) {
+  if (!line.value) return;
+  const confirmed = await new Promise<boolean>((resolve) => {
+    tg.showConfirm(
+      `Unlink ${claimLabel(c)} from this line? They'll lose access in their dashboard.`,
+      (ok: boolean) => resolve(ok)
+    );
+  });
+  if (!confirmed) return;
+
+  unclaiming.value = c.telegram_id;
+  try {
+    await api.unclaimCustomer(line.value.id, c.telegram_id);
+    claims.value = claims.value.filter((x) => x.telegram_id !== c.telegram_id);
+    tg.HapticFeedback.notificationOccurred("success");
+  } catch (e: any) {
+    tg.showAlert(e.message || "Failed to unlink.");
     tg.HapticFeedback.notificationOccurred("error");
+  } finally {
+    unclaiming.value = null;
   }
 }
 
@@ -329,20 +362,21 @@ function statusLabel(sub: any) {
         </div>
       </div>
 
-      <!-- Share with customer -->
-      <div class="card" style="margin-top: 12px">
-        <div v-if="!shareLink" class="card-row">
-          <span class="card-label">Customer Link</span>
-          <button class="btn-edit" @click="generateShareLink" :disabled="sharing">
-            {{ sharing ? 'Generating...' : 'Generate' }}
-          </button>
+      <!-- Send to customer + linked list -->
+      <div v-if="user?.canShareWithCustomers" class="card" style="margin-top: 12px">
+        <div class="card-row" style="cursor: pointer" @click="copyClaimCommand">
+          <span class="card-label">Send to customer</span>
+          <span class="btn-edit">{{ claimCopied ? 'Copied!' : 'Copy' }}</span>
         </div>
-        <div v-else class="card-row" style="cursor: pointer" @click="copyShareLink">
-          <div style="min-width: 0; flex: 1">
-            <span class="card-label">Customer Link</span>
-            <div class="share-link">{{ shareLink }}</div>
-          </div>
-          <span class="btn-edit">{{ shareCopied ? 'Copied!' : 'Copy' }}</span>
+        <div class="card-row" v-for="c in claims" :key="c.telegram_id">
+          <span class="card-label">{{ claimLabel(c) }}</span>
+          <button
+            class="btn-unlink"
+            :disabled="unclaiming === c.telegram_id"
+            @click="unclaim(c)"
+          >
+            {{ unclaiming === c.telegram_id ? 'Unlinking…' : 'Unlink' }}
+          </button>
         </div>
       </div>
 
@@ -490,6 +524,19 @@ function statusLabel(sub: any) {
   transform: translateX(20px);
 }
 .toggle input:disabled + .toggle-slider {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-unlink {
+  background: none;
+  border: none;
+  color: #ff3b30;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.btn-unlink:disabled {
   opacity: 0.5;
   cursor: default;
 }

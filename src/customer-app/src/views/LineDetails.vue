@@ -10,41 +10,16 @@ const { data: line, loading } = useAsync(() => api.getLine(props.id));
 
 const toggling = ref(false);
 const copied = ref(false);
-const editingNotes = ref(false);
-const editNotes = ref("");
-const savingNotes = ref(false);
-
-function startEditNotes() {
-  editNotes.value = line.value?.notes || "";
-  editingNotes.value = true;
-}
-
-async function saveNotes() {
-  if (!line.value || savingNotes.value) return;
-  savingNotes.value = true;
-  try {
-    await api.updateNotes(line.value.id, editNotes.value);
-    line.value.notes = editNotes.value || null;
-    editingNotes.value = false;
-    tg.HapticFeedback.notificationOccurred("success");
-  } catch {
-    tg.HapticFeedback.notificationOccurred("error");
-  } finally {
-    savingNotes.value = false;
-  }
-}
 
 const copyText = computed(() => {
   if (!line.value) return "";
   const l = line.value;
-  const parts = [
+  return [
     `Username: ${l.username}`,
     `Password: ${l.password}`,
-  ];
-  if (l.serverDns) parts.push(`Server: ${l.serverDns}`);
-  parts.push(`Expires: ${l.expiresDateTime || l.expiresFormatted}`);
-  parts.push(`Connections: ${l.maxConnections}`);
-  return parts.join("\n");
+    `Expires: ${l.expiresDateTime || l.expiresFormatted}`,
+    `Connections: ${l.maxConnections}`,
+  ].join("\n");
 });
 
 async function copyDetails() {
@@ -114,10 +89,6 @@ function statusLabel(sub: any) {
           </div>
         </div>
         <div class="copy-divider"></div>
-        <div v-if="line.serverDns" class="copy-row">
-          <span class="copy-label">Server</span>
-          <span class="copy-value">{{ line.serverDns }}</span>
-        </div>
         <div class="copy-row">
           <span class="copy-label">Username</span>
           <span class="copy-value">{{ line.username }}</span>
@@ -137,32 +108,6 @@ function statusLabel(sub: any) {
         <div class="copy-footer">
           <span class="copy-hint">{{ copied ? 'Copied!' : 'Tap to copy' }}</span>
         </div>
-      </div>
-
-      <!-- Notes -->
-      <div class="card" style="margin-top: 12px">
-        <template v-if="!editingNotes">
-          <div class="card-row">
-            <span class="card-label">My Notes</span>
-            <span class="card-value" style="font-size: 13px">{{ line.notes || '—' }}</span>
-          </div>
-          <div class="card-row" style="margin-top: 4px">
-            <span></span>
-            <button class="btn-edit" @click="startEditNotes">Edit</button>
-          </div>
-        </template>
-        <template v-else>
-          <div class="card-row">
-            <span class="card-label">My Notes</span>
-            <input v-model="editNotes" type="text" class="edit-inline" placeholder="e.g. Living room TV" @click.stop />
-          </div>
-          <div class="card-row" style="margin-top: 4px">
-            <button class="btn-inline btn-inline-cancel" @click="editingNotes = false" :disabled="savingNotes">Cancel</button>
-            <button class="btn-edit" @click="saveNotes" :disabled="savingNotes">
-              {{ savingNotes ? 'Saving...' : 'Save' }}
-            </button>
-          </div>
-        </template>
       </div>
 
       <!-- Adult content toggle -->

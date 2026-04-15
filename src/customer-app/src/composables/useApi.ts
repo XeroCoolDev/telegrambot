@@ -34,20 +34,12 @@ export interface CustomerLine {
   daysLeft: number | null;
   maxConnections: string;
   adultEnabled: boolean;
-  serverDns: string | null;
-  notes: string | null;
 }
 
 export const api = {
   getLines: () => request<CustomerLine[]>("/lines"),
 
   getLine: (id: string) => request<CustomerLine>(`/line/${id}`),
-
-  updateNotes: (lineId: string, notes: string) =>
-    request<{ success: boolean }>("/update-notes", {
-      method: "POST",
-      body: JSON.stringify({ lineId, notes }),
-    }),
 
   toggleAdult: (lineId: string, enable: boolean) =>
     request<{ success: boolean; adultEnabled: boolean }>("/toggle-adult", {

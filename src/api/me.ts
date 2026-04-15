@@ -10,13 +10,21 @@ export function registerMeRoutes(api: Hono<AuthEnv>) {
     const isAdmin = ADMIN_IDS.has(tgId);
     const permissions = parsePermissions(c.get("permissions"));
 
+    const shareEnabledIds = new Set(
+      (process.env.CUSTOMER_TELEGRAM_IDS || "")
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter(Number.isFinite)
+    );
+    const canShareWithCustomers = shareEnabledIds.has(tgId);
+
     const config = {
       maxConnections: Number(process.env.MAX_CONNECTIONS || 3),
       extendConnLockDays: Number(process.env.EXTEND_CONN_LOCK_DAYS || 30),
     };
 
     if (!xuiApiKey) {
-      return c.json({ linked: false, isAdmin, permissions, config });
+      return c.json({ linked: false, isAdmin, permissions, canShareWithCustomers, config });
     }
 
     const xuiUser = await xui.getUserAsReseller(xuiApiKey);
@@ -28,6 +36,7 @@ export function registerMeRoutes(api: Hono<AuthEnv>) {
       xuiUsername: xuiUser.username,
       isAdmin,
       permissions,
+      canShareWithCustomers,
       config,
     });
   });

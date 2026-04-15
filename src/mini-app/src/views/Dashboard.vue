@@ -52,8 +52,14 @@ const filtered = computed(() => {
 
   const q = search.value.toLowerCase().trim();
   if (q) {
+    const qBare = q.startsWith("@") ? q.slice(1) : q;
     result = result.filter(
-      (s: any) => s.username?.toLowerCase().includes(q) || s.id?.toString().includes(q) || s.resellerNotes?.toLowerCase().includes(q)
+      (s: any) =>
+        s.username?.toLowerCase().includes(q) ||
+        s.id?.toString().includes(q) ||
+        s.resellerNotes?.toLowerCase().includes(q) ||
+        s.customerUsername?.toLowerCase().includes(qBare) ||
+        s.customerTelegramId?.toString().includes(qBare)
     );
   }
 
@@ -171,7 +177,7 @@ function tapLine(id: string) {
         v-if="subs && subs.length > 0"
         v-model="search"
         type="search"
-        placeholder="Search by username, ID or notes..."
+        placeholder="Search line, notes, @customer or TG ID..."
         class="search-input"
         @input="page = 1"
         @click.stop
@@ -202,6 +208,7 @@ function tapLine(id: string) {
             </div>
           </div>
           <div class="line-indicators">
+            <span v-if="sub.customerTelegramId" class="badge-customer" title="Linked to a customer">@</span>
             <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
             <span class="status-dot" :class="statusDotClass(sub)"></span>
           </div>
@@ -304,6 +311,20 @@ function tapLine(id: string) {
 .dot-orange { background: #ff9500; }
 .dot-red { background: #ff3b30; }
 .dot-gray { background: var(--tg-hint); }
+.badge-customer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tg-link);
+  background: var(--tg-secondary-bg);
+  border: 1px solid var(--tg-link);
+  border-radius: 50%;
+  line-height: 1;
+}
 .badge-adult-off {
   font-size: 10px;
   font-weight: 700;

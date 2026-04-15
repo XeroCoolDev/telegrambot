@@ -1,8 +1,9 @@
 import type { Hono } from "hono";
+import type { AppDb } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { requirePerm, type AuthEnv } from "./auth.js";
 
-export function registerLineRoutes(api: Hono<AuthEnv>) {
+export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
   // GET /subscriptions — live lines from xui.one
   api.get("/subscriptions", async (c) => {
     const xuiUserId = c.get("xuiUserId");
@@ -11,18 +12,35 @@ export function registerLineRoutes(api: Hono<AuthEnv>) {
     const lines = await xui.getUserLines(xuiUserId);
     if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
 
+    // Build a map of line_id → first linked customer (if any)
+    const claimRows = db.getAllClaimsWithCustomer.all() as {
+      xui_line_id: string;
+      telegram_id: number;
+      username: string | null;
+      first_name: string | null;
+    }[];
+    const claimByLine = new Map<string, typeof claimRows[number]>();
+    for (const r of claimRows) {
+      if (!claimByLine.has(r.xui_line_id)) claimByLine.set(r.xui_line_id, r);
+    }
+
     return c.json(
-      lines.map((line) => ({
-        id: line.id,
-        username: line.username,
-        status: xui.isLineEnabled(line) ? "active" : "disabled",
-        expDate: xui.normaliseExpDate(line.exp_date),
-        expiresFormatted: xui.formatExpiry(line.exp_date),
-        daysLeft: xui.daysUntilExpiry(line.exp_date),
-        maxConnections: line.max_connections,
-        adultEnabled: xui.hasAdultBouquets(line),
-        resellerNotes: line.reseller_notes || null,
-      }))
+      lines.map((line) => {
+        const claim = claimByLine.get(line.id);
+        return {
+          id: line.id,
+          username: line.username,
+          status: xui.isLineEnabled(line) ? "active" : "disabled",
+          expDate: xui.normaliseExpDate(line.exp_date),
+          expiresFormatted: xui.formatExpiry(line.exp_date),
+          daysLeft: xui.daysUntilExpiry(line.exp_date),
+          maxConnections: line.max_connections,
+          adultEnabled: xui.hasAdultBouquets(line),
+          resellerNotes: line.reseller_notes || null,
+          customerUsername: claim?.username || null,
+          customerTelegramId: claim?.telegram_id || null,
+        };
+      })
     );
   });
 

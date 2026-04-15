@@ -1,23 +1,28 @@
 import { Hono, type Context, type Next } from "hono";
-import type { AppDb, DbCustomerLine } from "../db/index.js";
-import { generateToken } from "../db/index.js";
+import type { Bot } from "grammy";
+import type { AppDb } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { validateInitData } from "../services/telegram-auth.js";
 import { isRateLimited } from "../services/rate-limit.js";
+import { generateClaimToken } from "../services/claim-token.js";
 import type { AuthEnv } from "./auth.js";
 
 export type CustomerEnv = { Variables: { customerTelegramId: number } };
 
 /** Register the /customer/generate-token endpoint on the reseller API (authenticated) */
-export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
+export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb, _customerBot?: Bot) {
   api.post("/customer/generate-token", async (c) => {
     const xuiUserId = c.get("xuiUserId");
+    const tgId = c.get("telegramId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
 
-    const enabledResellers = new Set(
-      (process.env.CUSTOMER_ENABLED_RESELLERS || "").split(",").map((s) => s.trim()).filter(Boolean)
+    const shareEnabledIds = new Set(
+      (process.env.CUSTOMER_TELEGRAM_IDS || "")
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter(Number.isFinite)
     );
-    if (enabledResellers.size > 0 && !enabledResellers.has(xuiUserId)) {
+    if (!shareEnabledIds.has(tgId)) {
       return c.json({ error: "Customer sharing not enabled for your account" }, 403);
     }
 
@@ -27,23 +32,48 @@ export function registerResellerCustomerRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const lineData = await xui.getLineAsReseller(xuiApiKey, lineId);
     if (!lineData) return c.json({ error: "Line not found" }, 404);
 
-    const existing = db.getCustomerLineByLineId.get(lineId) as DbCustomerLine | undefined;
+    const token = generateClaimToken(lineId);
     const botUsername = process.env.CUSTOMER_BOT_USERNAME || "";
-
-    if (existing) {
-      return c.json({
-        token: existing.token,
-        link: botUsername ? `https://t.me/${botUsername}?start=${existing.token}` : existing.token,
-      });
-    }
-
-    const token = generateToken();
-    db.createCustomerToken.run(lineId, xuiUserId, token);
 
     return c.json({
       token,
       link: botUsername ? `https://t.me/${botUsername}?start=${token}` : token,
     });
+  });
+
+  // List customers linked to a given line (reseller must own it)
+  api.get("/customer/line-claims/:lineId", async (c) => {
+    const xuiUserId = c.get("xuiUserId");
+    if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
+
+    const lineId = c.req.param("lineId");
+    const xuiApiKey = c.get("xuiApiKey");
+    const line = await xui.getLineAsReseller(xuiApiKey, lineId);
+    if (!line) return c.json({ error: "Line not found" }, 404);
+
+    const rows = db.getClaimsForLine.all(lineId) as {
+      telegram_id: number;
+      username: string | null;
+      first_name: string | null;
+      created_at: string;
+    }[];
+    return c.json(rows);
+  });
+
+  // Unlink a specific tg id from a line (reseller must own the line)
+  api.post("/customer/unclaim", async (c) => {
+    const xuiUserId = c.get("xuiUserId");
+    if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
+
+    const { lineId, telegramId } = await c.req.json<{ lineId: string; telegramId: number }>();
+    if (!lineId || !telegramId) return c.json({ error: "Missing lineId or telegramId" }, 400);
+
+    const xuiApiKey = c.get("xuiApiKey");
+    const line = await xui.getLineAsReseller(xuiApiKey, lineId);
+    if (!line) return c.json({ error: "Line not found" }, 404);
+
+    db.unclaimLine.run(telegramId, lineId);
+    return c.json({ success: true });
   });
 }
 
@@ -71,19 +101,18 @@ export function createCustomerApi(db: AppDb): Hono<CustomerEnv> {
 
   customerApi.get("/lines", async (c) => {
     const tgId = c.get("customerTelegramId");
-    const customerLines = db.getCustomerLines.all(tgId) as DbCustomerLine[];
-    if (customerLines.length === 0) return c.json([]);
+    const rows = db.getClaimedLineIds.all(tgId) as { xui_line_id: string }[];
+    if (rows.length === 0) return c.json([]);
 
-    const lines = [];
-    for (const cl of customerLines) {
-      const reseller = await xui.getUser(cl.reseller_xui_user_id);
-      const line = await xui.getLine(cl.xui_line_id);
-      if (!line) continue;
+    const lines = (
+      await Promise.all(rows.map((r) => xui.getLine(r.xui_line_id)))
+    ).filter((l): l is NonNullable<typeof l> => !!l);
 
-      lines.push({
+    return c.json(
+      lines.map((line) => ({
         id: line.id,
         username: line.username,
-        password: line.password,
+        password: "", // not included in list view; fetched per-line on detail
         status: xui.isLineEnabled(line) ? "active" : "disabled",
         expDate: xui.normaliseExpDate(line.exp_date),
         expiresFormatted: xui.formatExpiry(line.exp_date),
@@ -91,27 +120,20 @@ export function createCustomerApi(db: AppDb): Hono<CustomerEnv> {
         daysLeft: xui.daysUntilExpiry(line.exp_date),
         maxConnections: line.max_connections,
         adultEnabled: xui.hasAdultBouquets(line),
-        serverDns: reseller?.reseller_dns || null,
-        notes: cl.notes || null,
-      });
-    }
-
-    return c.json(lines);
+      }))
+    );
   });
 
   customerApi.get("/line/:id", async (c) => {
     const tgId = c.get("customerTelegramId");
     const lineId = c.req.param("id");
 
-    const cl = db.getCustomerLineByLineId.get(lineId) as DbCustomerLine | undefined;
-    if (!cl || cl.customer_telegram_id !== tgId) {
+    if (!db.isLineClaimedBy.get(tgId, lineId)) {
       return c.json({ error: "Line not found" }, 404);
     }
 
     const line = await xui.getLine(lineId);
     if (!line) return c.json({ error: "Line not found" }, 404);
-
-    const reseller = await xui.getUser(cl.reseller_xui_user_id);
 
     return c.json({
       id: line.id,
@@ -124,34 +146,21 @@ export function createCustomerApi(db: AppDb): Hono<CustomerEnv> {
       daysLeft: xui.daysUntilExpiry(line.exp_date),
       maxConnections: line.max_connections,
       adultEnabled: xui.hasAdultBouquets(line),
-      serverDns: reseller?.reseller_dns || null,
-      notes: cl.notes || null,
     });
-  });
-
-  customerApi.post("/update-notes", async (c) => {
-    const tgId = c.get("customerTelegramId");
-    const { lineId, notes } = await c.req.json<{ lineId: string; notes: string }>();
-
-    const cl = db.getCustomerLineByLineId.get(lineId) as DbCustomerLine | undefined;
-    if (!cl || cl.customer_telegram_id !== tgId) {
-      return c.json({ error: "Line not found" }, 404);
-    }
-
-    db.updateCustomerLineNotes.run(notes || null, lineId, tgId);
-    return c.json({ success: true });
   });
 
   customerApi.post("/toggle-adult", async (c) => {
     const tgId = c.get("customerTelegramId");
     const { lineId, enable } = await c.req.json<{ lineId: string; enable: boolean }>();
 
-    const cl = db.getCustomerLineByLineId.get(lineId) as DbCustomerLine | undefined;
-    if (!cl || cl.customer_telegram_id !== tgId) {
+    if (!db.isLineClaimedBy.get(tgId, lineId)) {
       return c.json({ error: "Line not found" }, 404);
     }
 
-    const reseller = await xui.getUser(cl.reseller_xui_user_id);
+    const line = await xui.getLine(lineId);
+    if (!line) return c.json({ error: "Line not found" }, 404);
+
+    const reseller = await xui.getUser(line.member_id);
     if (!reseller) return c.json({ error: "Failed to fetch reseller data" }, 502);
 
     const success = await xui.toggleAdultContent(reseller.api_key, lineId, enable);
