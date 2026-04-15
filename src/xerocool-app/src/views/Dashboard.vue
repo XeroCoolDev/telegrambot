@@ -177,7 +177,7 @@ function tapLine(id: string) {
         v-if="subs && subs.length > 0"
         v-model="search"
         type="search"
-        placeholder="Search line, notes, @customer or TG ID..."
+        placeholder="Search lines..."
         class="search-input"
         @input="page = 1"
         @click.stop
