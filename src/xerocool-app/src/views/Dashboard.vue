@@ -129,6 +129,10 @@ function tapLine(id: string) {
     </template>
 
     <template v-else-if="user">
+      <div style="font-size: 13px; color: var(--tg-hint); margin-bottom: 12px">
+        Logged in as <b style="color: var(--tg-text)">{{ user.xuiUsername }}</b>
+      </div>
+
       <!-- Stats -->
       <div class="stats-grid">
         <div class="stat-card stat-card-credits" @click="router.push('/buy')">
