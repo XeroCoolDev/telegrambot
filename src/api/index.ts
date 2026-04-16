@@ -25,6 +25,9 @@ export function createApp(db: AppDb, xerocoolBot: Bot, xposedBot?: Bot) {
   // Xposed (customer) API — separate auth
   const xposedApi = createXposedApi(db, xposedBot);
 
+  // Health check — for uptime monitors (UptimeRobot, etc.)
+  app.get("/health", (c) => c.json({ ok: true }));
+
   // BTCPay webhook (unauthenticated)
   registerBtcpayWebhook(app, db, xerocoolBot);
 
@@ -46,7 +49,11 @@ export function createApp(db: AppDb, xerocoolBot: Bot, xposedBot?: Bot) {
     }
   })();
 
+  // Skip static serving for API/webhook/health paths
+  const apiPrefixes = ["/xerocool", "/xposed", "/webhooks", "/health"];
+
   app.use("/*", async (c, next) => {
+    if (apiPrefixes.some((p) => c.req.path.startsWith(p))) return next();
     const host = (c.req.header("host") || "").toLowerCase();
     const isXposed = !!xposedHost && host === xposedHost;
     const root = isXposed ? "./dist/xposed" : "./dist/public";
@@ -57,6 +64,7 @@ export function createApp(db: AppDb, xerocoolBot: Bot, xposedBot?: Bot) {
     return handler(c, next);
   });
   app.get("/*", async (c, next) => {
+    if (apiPrefixes.some((p) => c.req.path.startsWith(p))) return next();
     const host = (c.req.header("host") || "").toLowerCase();
     const isXposed = !!xposedHost && host === xposedHost;
     const root = isXposed ? "./dist/xposed" : "./dist/public";
