@@ -9,7 +9,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const users = db.db
       .prepare(
-        "SELECT telegram_id, username, first_name, xui_user_id, xui_api_key, permissions, created_at FROM users ORDER BY created_at DESC"
+        "SELECT telegram_id, username, first_name, xui_user_id, xui_api_key, xui_username, permissions, created_at, last_accessed FROM users ORDER BY created_at DESC"
       )
       .all() as any[];
     return c.json(users.map((u) => ({ ...u, permissions: parsePermissions(u.permissions) })));
@@ -41,7 +41,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
 
     // Store whatever api_key XUI has (may be empty — admin can paste it in
     // later on the user page after generating in XUI).
-    db.linkXui.run(xuiUserId, xuiUser.api_key || null, telegramId);
+    db.linkXui.run(xuiUserId, xuiUser.api_key || null, xuiUser.username || null, telegramId);
     return c.json({
       success: true,
       username: xuiUser.username,
@@ -61,14 +61,14 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const target = db.getUser.get(telegramId) as DbUser | undefined;
     if (!target?.xui_user_id) return c.json({ error: "User not linked to an XUI user" }, 404);
 
-    db.linkXui.run(target.xui_user_id, apiKey, telegramId);
+    db.linkXui.run(target.xui_user_id, apiKey, target.xui_username || null, telegramId);
     return c.json({ success: true });
   });
 
   api.post("/admin/unlink", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId } = await c.req.json<{ telegramId: number }>();
-    db.linkXui.run(null, null, telegramId);
+    db.linkXui.run(null, null, null, telegramId);
     return c.json({ success: true });
   });
 

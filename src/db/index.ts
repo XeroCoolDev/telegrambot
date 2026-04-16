@@ -6,8 +6,10 @@ export interface DbUser {
   first_name: string | null;
   xui_user_id: string | null;
   xui_api_key: string | null;
+  xui_username: string | null;
   permissions: string | null;
   created_at: string;
+  last_accessed: string | null;
 }
 
 export interface UserPermissions {
@@ -122,6 +124,14 @@ export function initDb(path: string) {
   // Drop obsolete customer_lines table if it exists (replaced by customer_claims)
   db.exec("DROP TABLE IF EXISTS customer_lines");
 
+  const userColNames = userCols.map((c) => c.name);
+  if (!userColNames.includes("last_accessed")) {
+    db.exec("ALTER TABLE users ADD COLUMN last_accessed TEXT");
+  }
+  if (!userColNames.includes("xui_username")) {
+    db.exec("ALTER TABLE users ADD COLUMN xui_username TEXT");
+  }
+
   const paymentCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
   if (!paymentCols.some((c) => c.name === "checkout_url")) {
     db.exec("ALTER TABLE payments ADD COLUMN checkout_url TEXT");
@@ -135,13 +145,14 @@ export function initDb(path: string) {
     // ── Reseller users ──
     getUser: db.prepare<[number]>("SELECT * FROM users WHERE telegram_id = ?"),
     upsertUser: db.prepare(`
-      INSERT INTO users (telegram_id, username, first_name)
-      VALUES (?, ?, ?)
+      INSERT INTO users (telegram_id, username, first_name, last_accessed)
+      VALUES (?, ?, ?, datetime('now'))
       ON CONFLICT(telegram_id) DO UPDATE SET
         username = excluded.username,
-        first_name = excluded.first_name
+        first_name = excluded.first_name,
+        last_accessed = datetime('now')
     `),
-    linkXui: db.prepare("UPDATE users SET xui_user_id = ?, xui_api_key = ? WHERE telegram_id = ?"),
+    linkXui: db.prepare("UPDATE users SET xui_user_id = ?, xui_api_key = ?, xui_username = ? WHERE telegram_id = ?"),
     updatePermissions: db.prepare("UPDATE users SET permissions = ? WHERE telegram_id = ?"),
     getAllLinkedUsers: db.prepare("SELECT * FROM users WHERE xui_user_id IS NOT NULL"),
 

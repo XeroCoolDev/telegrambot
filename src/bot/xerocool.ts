@@ -145,7 +145,7 @@ export function createXerocoolBot(db: AppDb) {
     }
 
     // Store whatever api_key XUI has; admin can update later via the user page
-    db.linkXui.run(xuiUserId, xuiUser.api_key || null, Number(telegramId));
+    db.linkXui.run(xuiUserId, xuiUser.api_key || null, xuiUser.username || null, Number(telegramId));
     await ctx.reply(
       `✅ Linked Telegram user ${telegramId} → XUI user ${xuiUser.username} (ID: ${xuiUserId})`
     );
