@@ -47,6 +47,15 @@ export function xerocoolAuthMiddleware(db: AppDb) {
 
     if (!user) return c.json({ error: "Account not registered" }, 403);
 
+    // Keep username + first_name fresh from every mini-app open (initData
+    // always carries the current Telegram profile). Covers pre-created rows
+    // from admin-link and handle changes.
+    db.upsertUser.run(
+      validated.user.id,
+      validated.user.username || null,
+      validated.user.first_name
+    );
+
     c.set("telegramId", validated.user.id);
     c.set("xuiUserId", user.xui_user_id || "");
     c.set("xuiApiKey", user.xui_api_key || "");
