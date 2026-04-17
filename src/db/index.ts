@@ -10,6 +10,7 @@ export interface DbUser {
   permissions: string | null;
   created_at: string;
   last_accessed: string | null;
+  last_auth_date: number | null;
 }
 
 export interface UserPermissions {
@@ -131,6 +132,9 @@ export function initDb(path: string) {
   if (!userColNames.includes("xui_username")) {
     db.exec("ALTER TABLE users ADD COLUMN xui_username TEXT");
   }
+  if (!userColNames.includes("last_auth_date")) {
+    db.exec("ALTER TABLE users ADD COLUMN last_auth_date INTEGER");
+  }
 
   const paymentCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
   if (!paymentCols.some((c) => c.name === "checkout_url")) {
@@ -151,6 +155,14 @@ export function initDb(path: string) {
         username = excluded.username,
         first_name = excluded.first_name,
         last_accessed = datetime('now')
+    `),
+    refreshUserProfile: db.prepare(`
+      UPDATE users SET
+        username = ?,
+        first_name = ?,
+        last_auth_date = ?,
+        last_accessed = datetime('now')
+      WHERE telegram_id = ?
     `),
     linkXui: db.prepare("UPDATE users SET xui_user_id = ?, xui_api_key = ?, xui_username = ? WHERE telegram_id = ?"),
     updatePermissions: db.prepare("UPDATE users SET permissions = ? WHERE telegram_id = ?"),
