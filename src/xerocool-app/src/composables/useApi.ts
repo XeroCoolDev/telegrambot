@@ -187,6 +187,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ telegramId, permissions }),
     }),
+  adminSetResellerGroup: (telegramId: number, chatId: number | null) =>
+    request<{ success: boolean }>("/admin/set-reseller-group", {
+      method: "POST",
+      body: JSON.stringify({ telegramId, chatId }),
+    }),
 
   createLine: (packageId: string, resellerNotes?: string, contact?: string) =>
     request<{ success: boolean; lineId: string }>("/lines/create", {

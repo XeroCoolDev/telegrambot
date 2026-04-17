@@ -9,7 +9,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const users = db.db
       .prepare(
-        "SELECT telegram_id, username, first_name, xui_user_id, xui_api_key, xui_username, permissions, created_at, last_accessed FROM users ORDER BY created_at DESC"
+        "SELECT telegram_id, username, first_name, xui_user_id, xui_api_key, xui_username, permissions, created_at, last_accessed, reseller_group_chat_id FROM users ORDER BY created_at DESC"
       )
       .all() as any[];
     return c.json(users.map((u) => ({ ...u, permissions: parsePermissions(u.permissions) })));
@@ -69,6 +69,24 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId } = await c.req.json<{ telegramId: number }>();
     db.linkXui.run(null, null, null, telegramId);
+    return c.json({ success: true });
+  });
+
+  api.post("/admin/set-reseller-group", async (c) => {
+    if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+    const { telegramId, chatId } = await c.req.json<{
+      telegramId: number;
+      chatId: number | null;
+    }>();
+
+    if (chatId !== null && !(Number.isInteger(chatId) && chatId < 0)) {
+      return c.json({ error: "Invalid chat id (expected negative supergroup id like -1001234567890)" }, 400);
+    }
+
+    const target = db.getUser.get(telegramId) as DbUser | undefined;
+    if (!target) return c.json({ error: "User not found" }, 404);
+
+    db.setResellerGroupChatId.run(chatId, telegramId);
     return c.json({ success: true });
   });
 

@@ -85,6 +85,44 @@ async function saveApiKey() {
   }
 }
 
+// Reseller group chat id editing
+const editingGroup = ref(false);
+const groupDraft = ref("");
+const savingGroup = ref(false);
+
+function startEditGroup() {
+  groupDraft.value = user.value?.reseller_group_chat_id != null ? String(user.value.reseller_group_chat_id) : "";
+  editingGroup.value = true;
+}
+async function saveGroup() {
+  if (!user.value || savingGroup.value) return;
+  const trimmed = groupDraft.value.trim();
+  let parsed: number | null = null;
+  if (trimmed) {
+    const n = Number(trimmed);
+    if (!Number.isInteger(n) || n >= 0) {
+      tg.showAlert("Enter a negative supergroup id like -1001234567890 (or leave blank to clear)");
+      return;
+    }
+    parsed = n;
+  }
+  savingGroup.value = true;
+  try {
+    await api.adminSetResellerGroup(user.value.telegram_id, parsed);
+    if (users.value) {
+      const row = users.value.find((u: any) => u.telegram_id === user.value!.telegram_id);
+      if (row) row.reseller_group_chat_id = parsed;
+    }
+    editingGroup.value = false;
+    tg.HapticFeedback.notificationOccurred("success");
+  } catch (e: any) {
+    tg.HapticFeedback.notificationOccurred("error");
+    tg.showAlert(e.message || "Failed to save group id");
+  } finally {
+    savingGroup.value = false;
+  }
+}
+
 async function unlinkUser() {
   if (!user.value) return;
   tg.showConfirm(`Unlink user ${user.value.username || user.value.telegram_id}?`, async (ok) => {
@@ -160,6 +198,25 @@ async function unlinkUser() {
           <button class="btn-inline btn-inline-cancel" @click="editingApiKey = false" :disabled="savingApiKey">Cancel</button>
           <button class="btn-edit" @click="saveApiKey" :disabled="savingApiKey || !apiKeyDraft.trim()">
             {{ savingApiKey ? 'Saving...' : 'Save' }}
+          </button>
+        </div>
+        <div class="card-row" v-if="!editingGroup">
+          <span class="card-label">Admin Group</span>
+          <span style="display: flex; align-items: center; gap: 6px; min-width: 0">
+            <span class="card-value" style="font-family: monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; max-width: 160px">
+              {{ user.reseller_group_chat_id ?? 'not set' }}
+            </span>
+            <button class="btn-edit" @click="startEditGroup">Edit</button>
+          </span>
+        </div>
+        <div class="card-row" v-if="editingGroup">
+          <span class="card-label">Admin Group</span>
+          <input v-model="groupDraft" type="text" class="edit-inline" placeholder="-1001234567890" />
+        </div>
+        <div class="card-row" v-if="editingGroup" style="margin-top: 4px">
+          <button class="btn-inline btn-inline-cancel" @click="editingGroup = false" :disabled="savingGroup">Cancel</button>
+          <button class="btn-edit" @click="saveGroup" :disabled="savingGroup">
+            {{ savingGroup ? 'Saving...' : 'Save' }}
           </button>
         </div>
         <div class="card-row">

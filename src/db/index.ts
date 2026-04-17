@@ -11,6 +11,7 @@ export interface DbUser {
   created_at: string;
   last_accessed: string | null;
   last_auth_date: number | null;
+  reseller_group_chat_id: number | null;
 }
 
 export interface UserPermissions {
@@ -135,6 +136,9 @@ export function initDb(path: string) {
   if (!userColNames.includes("last_auth_date")) {
     db.exec("ALTER TABLE users ADD COLUMN last_auth_date INTEGER");
   }
+  if (!userColNames.includes("reseller_group_chat_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN reseller_group_chat_id INTEGER");
+  }
 
   const paymentCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
   if (!paymentCols.some((c) => c.name === "checkout_url")) {
@@ -166,6 +170,9 @@ export function initDb(path: string) {
     `),
     linkXui: db.prepare("UPDATE users SET xui_user_id = ?, xui_api_key = ?, xui_username = ? WHERE telegram_id = ?"),
     updatePermissions: db.prepare("UPDATE users SET permissions = ? WHERE telegram_id = ?"),
+    setResellerGroupChatId: db.prepare(
+      "UPDATE users SET reseller_group_chat_id = ? WHERE telegram_id = ?"
+    ),
     getAllLinkedUsers: db.prepare("SELECT * FROM users WHERE xui_user_id IS NOT NULL"),
 
     // ── Payments ──

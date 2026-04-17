@@ -5,9 +5,23 @@ const XEROCOOL_ADMIN_CHAT_ID = process.env.XEROCOOL_ADMIN_CHAT_ID || "";
 
 function getUserLink(db: AppDb, telegramId: number): string {
   const user = db.getUser.get(telegramId) as DbUser | undefined;
-  if (user?.username) return `[@${user.username}](tg://user?id=${telegramId})`;
-  if (user?.first_name) return `[${user.first_name}](tg://user?id=${telegramId})`;
-  return `[User ${telegramId}](tg://user?id=${telegramId})`;
+  const label = user?.username
+    ? `@${user.username}`
+    : user?.first_name
+    ? user.first_name
+    : `User ${telegramId}`;
+  const target = resellerGroupUrl(user?.reseller_group_chat_id) ?? `tg://user?id=${telegramId}`;
+  return `[${label}](${target})`;
+}
+
+/** Build a private-supergroup deep link from a chat id like -1001234567890.
+ * Strips the -100 prefix and anchors on message id 1 (the universally-present
+ * "chat created" system message), which effectively opens the chat. */
+function resellerGroupUrl(chatId: number | null | undefined): string | null {
+  if (!chatId) return null;
+  const stripped = String(chatId).replace(/^-100/, "");
+  if (!stripped || stripped === String(chatId)) return null;
+  return `https://t.me/c/${stripped}/1`;
 }
 
 /** Admin-chat notification when a payment settles. User-side receipt is
