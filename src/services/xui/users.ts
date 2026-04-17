@@ -6,6 +6,11 @@ export async function getUser(xuiUserId: string): Promise<XuiUser | null> {
   return adminRequest<XuiUser>("get_user", xuiUserId);
 }
 
+/** Admin API — list all users in one call */
+export async function getAllUsers(): Promise<XuiUser[] | null> {
+  return adminRequest<XuiUser[]>("get_users");
+}
+
 /** Reseller API — get the reseller's own profile (least privilege) */
 export async function getUserAsReseller(
   resellerApiKey: string

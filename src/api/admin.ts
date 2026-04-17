@@ -12,7 +12,38 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
         "SELECT telegram_id, username, first_name, xui_user_id, xui_api_key, xui_username, permissions, created_at, last_accessed, reseller_group_chat_id FROM users ORDER BY created_at DESC"
       )
       .all() as any[];
-    return c.json(users.map((u) => ({ ...u, permissions: parsePermissions(u.permissions) })));
+
+    // Fold XUI credits in via a single get_users call. If XUI is unreachable,
+    // the map stays empty and every row reports credits: null — the UI still
+    // renders, just without the credit number.
+    const xuiList = await xui.getAllUsers();
+    const creditsByXuiId = new Map<string, number>();
+    if (xuiList) {
+      for (const x of xuiList) creditsByXuiId.set(x.id, parseInt(x.credits, 10));
+    }
+
+    // Last settled top-up per user — one grouped query instead of N lookups.
+    const lastTopUps = db.db
+      .prepare(
+        `SELECT telegram_id, credits, MAX(created_at) as created_at
+         FROM payments
+         WHERE status = 'settled'
+         GROUP BY telegram_id`
+      )
+      .all() as { telegram_id: number; credits: number; created_at: string }[];
+    const topUpByTgId = new Map(lastTopUps.map((r) => [r.telegram_id, r]));
+
+    return c.json(
+      users.map((u) => {
+        const topUp = topUpByTgId.get(u.telegram_id);
+        return {
+          ...u,
+          permissions: parsePermissions(u.permissions),
+          credits: u.xui_user_id ? creditsByXuiId.get(u.xui_user_id) ?? null : null,
+          lastTopUp: topUp ? { credits: topUp.credits, at: topUp.created_at } : null,
+        };
+      })
+    );
   });
 
   api.get("/admin/payments", async (c) => {

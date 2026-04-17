@@ -173,6 +173,10 @@ async function unlinkUser() {
           <span class="card-label">XUI Username</span>
           <span class="card-value" style="font-size: 13px">{{ user.xui_username }}</span>
         </div>
+        <div class="card-row" v-if="user.xui_user_id">
+          <span class="card-label">Credits</span>
+          <span class="card-value" style="font-size: 13px">{{ user.credits == null ? '— (unavailable)' : user.credits }}</span>
+        </div>
         <div class="card-row" v-if="user.xui_user_id && !editingApiKey">
           <span class="card-label">API Key</span>
           <span style="display: flex; align-items: center; gap: 6px; min-width: 0">

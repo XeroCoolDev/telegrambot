@@ -40,6 +40,13 @@ function openUser(telegramId: number) {
   tg.HapticFeedback.selectionChanged();
   router.push(`/admin/user/${telegramId}`);
 }
+
+function shortDate(str: string | null | undefined): string {
+  if (!str) return "";
+  const d = new Date(str.replace(" ", "T") + "Z");
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 </script>
 
 <template>
@@ -79,8 +86,13 @@ function openUser(telegramId: number) {
           <div class="card-row">
             <div style="min-width: 0; flex: 1">
               <div style="font-weight: 600; font-size: 14px">{{ u.username || u.first_name || 'Unknown' }}</div>
-              <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
-                TG: {{ u.telegram_id }} · XUI: {{ u.xui_user_id || 'unlinked' }}
+              <div v-if="!u.xui_user_id" style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
+                unlinked
+              </div>
+              <div v-else style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
+                {{ u.credits == null ? '— credits' : `${u.credits} credits` }}
+                <template v-if="u.lastTopUp"> · Last top: {{ u.lastTopUp.credits }} ({{ shortDate(u.lastTopUp.at) }})</template>
+                <template v-if="u.last_accessed"> · Active: {{ shortDate(u.last_accessed) }}</template>
               </div>
             </div>
             <span style="font-size: 18px; color: var(--tg-hint)">›</span>
