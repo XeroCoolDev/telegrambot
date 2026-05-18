@@ -4,7 +4,7 @@ RUN corepack enable
 # Build xerocool (reseller) mini-app
 FROM base AS xerocool-app-build
 WORKDIR /app/src/xerocool-app
-COPY src/xerocool-app/package.json src/xerocool-app/pnpm-lock.yaml* ./
+COPY src/xerocool-app/package.json src/xerocool-app/pnpm-lock.yaml* src/xerocool-app/.npmrc* ./
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY src/xerocool-app/ ./
 RUN pnpm build
@@ -12,7 +12,7 @@ RUN pnpm build
 # Build xposed (customer) mini-app
 FROM base AS xposed-app-build
 WORKDIR /app/src/xposed-app
-COPY src/xposed-app/package.json src/xposed-app/pnpm-lock.yaml* ./
+COPY src/xposed-app/package.json src/xposed-app/pnpm-lock.yaml* src/xposed-app/.npmrc* ./
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY src/xposed-app/ ./
 RUN pnpm build
