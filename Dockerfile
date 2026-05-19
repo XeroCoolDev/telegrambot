@@ -16,7 +16,11 @@ RUN pnpm build
 # Build xposed (customer) mini-app
 FROM base AS xposed-app-build
 WORKDIR /app/src/xposed-app
-COPY src/xposed-app/package.json src/xposed-app/pnpm-lock.yaml* src/xposed-app/.npmrc* ./
+COPY src/xposed-app/package.json \
+     src/xposed-app/pnpm-lock.yaml* \
+     src/xposed-app/.npmrc* \
+     src/xposed-app/pnpm-workspace.yaml \
+     ./
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY src/xposed-app/ ./
 RUN pnpm build
@@ -24,7 +28,7 @@ RUN pnpm build
 # Build server
 FROM base AS server-build
 WORKDIR /app
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY tsconfig.json ./
 COPY src/ src/
@@ -33,7 +37,7 @@ RUN pnpm build
 # Production
 FROM base AS production
 WORKDIR /app
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
 COPY --from=server-build /app/dist ./dist
 COPY --from=xerocool-app-build /app/src/xerocool-app/dist ./dist/public
