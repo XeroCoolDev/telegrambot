@@ -4,7 +4,11 @@ RUN corepack enable
 # Build xerocool (reseller) mini-app
 FROM base AS xerocool-app-build
 WORKDIR /app/src/xerocool-app
-COPY src/xerocool-app/package.json src/xerocool-app/pnpm-lock.yaml* src/xerocool-app/.npmrc* ./
+COPY src/xerocool-app/package.json \
+     src/xerocool-app/pnpm-lock.yaml* \
+     src/xerocool-app/.npmrc* \
+     src/xerocool-app/pnpm-workspace.yaml \
+     ./
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY src/xerocool-app/ ./
 RUN pnpm build
