@@ -49,5 +49,9 @@ export function formatExpiryWithTime(expDate: string | number | null): string {
 export function daysUntilExpiry(expDate: string | number | null): number | null {
   const ts = normaliseExpDate(expDate);
   if (!ts) return null;
-  return Math.floor((ts - Date.now() / 1000) / 86400);
+  const expDay = new Date(ts * 1000);
+  expDay.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((expDay.getTime() - today.getTime()) / 86400000);
 }
