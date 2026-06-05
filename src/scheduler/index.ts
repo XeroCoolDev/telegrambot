@@ -16,6 +16,10 @@ function dayLabel(daysLeft: number): string {
   return `in ${daysLeft} days`;
 }
 
+function escapeMd(text: string): string {
+  return text.replace(/[_*`[]/g, "\\$&");
+}
+
 function sectionHeading(daysLeft: number, expDate: string | number | null): string {
   if (daysLeft === 0) return "*Today*";
   if (daysLeft === 1) return "*Tomorrow*";
@@ -119,7 +123,7 @@ export function startScheduler(db: AppDb, bot: Bot) {
       const windowDesc = REMINDER_DAYS.map((d) => dayLabel(d)).join(", ");
       const list = adminSummary
         .sort((a, b) => b.count - a.count)
-        .map((r) => `• ${r.username} — ${r.count} line${r.count !== 1 ? "s" : ""}`)
+        .map((r) => `• ${escapeMd(r.username)} — ${r.count} line${r.count !== 1 ? "s" : ""}`)
         .join("\n");
       try {
         await bot.api.sendMessage(adminChatId,
