@@ -136,6 +136,7 @@ export function startScheduler(db: AppDb, bot: Bot) {
     }
 
     // Credit top-up reminders
+    const topupSummary: { username: string; daysSince: number }[] = [];
     if (TOPUP_REMINDER_DAYS > 0) {
       for (const user of linkedUsers) {
         const key = `topup:${user.telegram_id}`;
@@ -157,11 +158,27 @@ export function startScheduler(db: AppDb, bot: Bot) {
               { parse_mode: "Markdown" }
             );
             reminded.set(key, today);
+            topupSummary.push({ username: user.username || user.first_name || String(user.telegram_id), daysSince });
             console.log(`[scheduler] Top-up reminder sent to ${user.telegram_id} (${daysSince}d since last payment)`);
           }
         } catch (err) {
           console.error(`[scheduler] Top-up reminder error for ${user.telegram_id}:`, err);
         }
+      }
+    }
+
+    if (adminChatId && topupSummary.length > 0) {
+      const list = topupSummary
+        .sort((a, b) => b.daysSince - a.daysSince)
+        .map((r) => `• ${escapeMd(r.username)} — ${r.daysSince} days`)
+        .join("\n");
+      try {
+        await bot.api.sendMessage(adminChatId,
+          `💰 *${topupSummary.length} user${topupSummary.length !== 1 ? "s" : ""} overdue for a credit top-up*\n\n${list}`,
+          { parse_mode: "Markdown" }
+        );
+      } catch (err) {
+        console.error("[scheduler] Failed to send top-up admin summary:", err);
       }
     }
   });
