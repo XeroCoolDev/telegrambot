@@ -91,14 +91,50 @@ cd /opt/telegrambot/repo
 #    becomes a failed image build halfway through the deploy.
 pnpm install && pnpm build
 
-# 3. Commit and push — REQUIRED before deploying, see above
+# 3. Pre-flight the image build. The role deletes the running container
+#    BEFORE it builds, so a build failure leaves the bot down. Catching it
+#    here costs two minutes; catching it during a deploy costs an outage.
+docker build -t telegrambot:preflight .
+
+# 4. Commit and push — REQUIRED before deploying, see above
 git add -A src
 git commit -m "feat: ..."
 git push origin main
 
-# 4. Deploy
+# 5. Deploy
 sb install mod-telegrambot
 ```
+
+### Dependencies and pnpm
+
+pnpm is pinned by the `packageManager` field in all three `package.json` files
+and fetched by corepack at build time. The Dockerfile sets
+`COREPACK_ENABLE_DOWNLOAD_PROMPT=0` so a non-TTY build can download it without
+prompting.
+
+All four build stages use a bare `pnpm install --frozen-lockfile`. There is
+deliberately **no `|| pnpm install` fallback** — that fallback silently
+re-resolved every dependency whenever the lockfile didn't match, which made
+builds non-reproducible and hid the mismatch. If a frozen install now fails,
+the lockfile is genuinely out of date and needs regenerating:
+
+```bash
+cd /opt/telegrambot/repo
+pnpm install --lockfile-only
+(cd src/xerocool-app && pnpm install --lockfile-only)
+(cd src/xposed-app   && pnpm install --lockfile-only)
+git add pnpm-lock.yaml src/*/pnpm-lock.yaml
+```
+
+**Bumping pnpm** means changing `packageManager` in all three files *and*
+regenerating all three lockfiles with that version, in the same commit.
+
+Build-script approval (`better-sqlite3`, `esbuild`) is currently declared three
+ways — `pnpm-workspace.yaml` (`allowBuilds`, the pnpm 11 form), `.npmrc`
+(`only-built-dependencies[]`) and the `pnpm` field in `package.json`. That's
+redundant but harmless, and it survives pnpm changing the syntax again. Note
+the root `.npmrc` is not copied into any Docker stage, so it only affects local
+installs.
 
 Note that `pnpm build` at the root only compiles the **server** — `tsconfig.json` excludes both mini-apps. The Vue apps build with plain `vite build` and are never type-checked, so TS errors in `.vue` files surface as runtime bugs rather than build failures. To check them explicitly:
 

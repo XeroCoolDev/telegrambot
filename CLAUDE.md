@@ -16,6 +16,9 @@
 - Deploys run from `/opt/telegrambot/repo`, which the Ansible role **hard-resets to `origin/main`** (`git` module, `force: true`). Always `git push origin main` before deploying — unpushed commits and uncommitted edits are destroyed.
 - Only `main` ships; a feature branch needs `telegrambot_docker_build_branch` overridden in the inventory.
 - Mini-apps build with plain `vite build` and are **not** type-checked. Use `pnpm exec vue-tsc --noEmit` inside `src/xerocool-app` / `src/xposed-app` to check them.
+- The role deletes the running container **before** building the image, so a failed build takes the bot down. Pre-flight with `docker build -t telegrambot:preflight .` before deploying.
+- pnpm is pinned via `packageManager` in all three `package.json` files. Bumping it means changing all three *and* regenerating all three lockfiles (`pnpm install --lockfile-only`) in the same commit.
+- Build stages use a bare `pnpm install --frozen-lockfile` with no fallback. A failure there means the lockfile is stale — regenerate it, don't work around it.
 - Env vars come from the Saltbox inventory (`telegrambot_docker_envs_custom`), not `.env` — that's local dev only.
 - `/opt/telegrambot/data/bot.db` is bind-mounted and survives rebuilds; schema changes must stay additive and guarded, as in `src/db/index.ts`.
 

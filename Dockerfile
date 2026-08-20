@@ -1,15 +1,19 @@
 FROM node:22-alpine AS base
+# pnpm version comes from each package.json's packageManager field. Without
+# this, corepack prompts before downloading a version other than the one
+# bundled with the image, which fails in a non-TTY build.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 
 # Build xerocool (reseller) mini-app
 FROM base AS xerocool-app-build
 WORKDIR /app/src/xerocool-app
 COPY src/xerocool-app/package.json \
-     src/xerocool-app/pnpm-lock.yaml* \
+     src/xerocool-app/pnpm-lock.yaml \
      src/xerocool-app/.npmrc* \
      src/xerocool-app/pnpm-workspace.yaml \
      ./
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --frozen-lockfile
 COPY src/xerocool-app/ ./
 RUN pnpm build
 
@@ -17,19 +21,19 @@ RUN pnpm build
 FROM base AS xposed-app-build
 WORKDIR /app/src/xposed-app
 COPY src/xposed-app/package.json \
-     src/xposed-app/pnpm-lock.yaml* \
+     src/xposed-app/pnpm-lock.yaml \
      src/xposed-app/.npmrc* \
      src/xposed-app/pnpm-workspace.yaml \
      ./
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --frozen-lockfile
 COPY src/xposed-app/ ./
 RUN pnpm build
 
 # Build server
 FROM base AS server-build
 WORKDIR /app
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile || pnpm install
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src/ src/
 RUN pnpm build
@@ -37,8 +41,8 @@ RUN pnpm build
 # Production
 FROM base AS production
 WORKDIR /app
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
-RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --prod --frozen-lockfile
 COPY --from=server-build /app/dist ./dist
 COPY --from=xerocool-app-build /app/src/xerocool-app/dist ./dist/public
 COPY --from=xposed-app-build /app/src/xposed-app/dist ./dist/xposed
