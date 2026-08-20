@@ -5,7 +5,7 @@ export default { name: "Dashboard" };
 <script setup lang="ts">
 import { computed, ref, onActivated, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Link2Off, Satellite, SearchX } from "lucide-vue-next";
+import { FileText, Link2Off, Satellite, SearchX } from "lucide-vue-next";
 import { useStore } from "../composables/useStore";
 
 const router = useRouter();
@@ -102,6 +102,63 @@ const ownerScoped = computed<any[]>(() => {
   return list.filter((s) => String(s.ownerXuiUserId) === ownerFilter.value);
 });
 
+// ── Sorting ──
+type SortKey = "newest" | "expiry-asc" | "expiry-desc" | "name";
+const sortBy = ref<SortKey>("newest");
+watch(sortBy, () => { page.value = 1; });
+
+/** Unlimited lines sort as "never expires", i.e. after everything dated. */
+function expiryKey(s: any): number {
+  return s.expDate === null ? Number.POSITIVE_INFINITY : s.expDate;
+}
+
+/** Subtraction would yield NaN for two unlimited lines, so compare instead. */
+function compareExpiry(a: any, b: any): number {
+  const ka = expiryKey(a);
+  const kb = expiryKey(b);
+  if (ka === kb) return 0;
+  return ka < kb ? -1 : 1;
+}
+
+/**
+ * Expiry as a human interval — the list is scanned for urgency far more often
+ * than for exact dates, and the absolute date stays on the row alongside it.
+ * Uses the server's calendar-day daysLeft so this agrees with the status dot
+ * and the reminder scheduler.
+ */
+function relativeExpiry(s: any): string {
+  if (s.expDate === null || s.daysLeft === null) return "Unlimited";
+
+  if (s.expDate * 1000 < Date.now()) {
+    const ago = Math.max(0, -s.daysLeft);
+    if (ago === 0) return "expired today";
+    if (ago < 30) return `expired ${ago}d`;
+    if (ago < 365) return `expired ${Math.round(ago / 30)}mo`;
+    return `expired ${Math.floor(ago / 365)}y`;
+  }
+
+  const d = s.daysLeft;
+  if (d <= 0) return "today";
+  if (d === 1) return "tomorrow";
+  if (d < 30) return `${d}d left`;
+  if (d < 365) return `${Math.round(d / 30)}mo left`;
+  const years = Math.floor(d / 365);
+  const months = Math.round((d - years * 365) / 30);
+  return months > 0 ? `${years}y ${months}mo left` : `${years}y left`;
+}
+
+// ── Notes popup ──
+const notesLine = ref<any | null>(null);
+
+function openNotes(sub: any) {
+  notesLine.value = sub;
+  tg.HapticFeedback.selectionChanged();
+}
+
+function closeNotes() {
+  notesLine.value = null;
+}
+
 function getLineStatus(s: any): "active" | "expiring" | "expired" | "disabled" {
   if (s.status === "disabled") return "disabled";
   // Line has expired only if its timestamp is actually in the past
@@ -153,15 +210,38 @@ const stats = computed(() => {
   return { active, expiring, expired, disabled, total: ownerScoped.value.length };
 });
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / perPage)));
+const sorted = computed(() => {
+  const list = [...filtered.value];
+  switch (sortBy.value) {
+    case "expiry-asc":
+      return list.sort(compareExpiry);
+    case "expiry-desc":
+      return list.sort((a, b) => compareExpiry(b, a));
+    case "name":
+      return list.sort((a, b) => String(a.username).localeCompare(String(b.username)));
+    default:
+      return list; // API order — newest line id first
+  }
+});
+
+const totalPages = computed(() => Math.max(1, Math.ceil(sorted.value.length / perPage)));
 const paginated = computed(() => {
   const start = (page.value - 1) * perPage;
-  return filtered.value.slice(start, start + perPage);
+  return sorted.value.slice(start, start + perPage);
 });
 
 function setPage(p: number) {
   page.value = Math.max(1, Math.min(p, totalPages.value));
   tg.HapticFeedback.selectionChanged();
+}
+
+/** Same buckets as the status dot, but as text colour rather than background. */
+function expiryTextClass(sub: any) {
+  const st = getLineStatus(sub);
+  if (st === "disabled") return "exp-gray";
+  if (st === "expired") return "exp-red";
+  if (st === "expiring") return "exp-orange";
+  return "exp-green";
 }
 
 function statusDotClass(sub: any) {
@@ -270,16 +350,23 @@ function tapLine(id: string) {
         <option v-for="o in owners" :key="o.id" :value="o.id">{{ o.label }} ({{ o.count }})</option>
       </select>
 
-      <!-- Search -->
-      <input
-        v-if="scopedSubs && scopedSubs.length > 0"
-        v-model="search"
-        type="search"
-        placeholder="Search lines..."
-        class="search-input"
-        @input="page = 1"
-        @click.stop
-      />
+      <!-- Search + sort -->
+      <div v-if="scopedSubs && scopedSubs.length > 0" class="list-controls">
+        <input
+          v-model="search"
+          type="search"
+          placeholder="Search lines..."
+          class="search-input"
+          @input="page = 1"
+          @click.stop
+        />
+        <select v-model="sortBy" class="sort-select" @click.stop>
+          <option value="newest">Newest</option>
+          <option value="expiry-asc">Soonest</option>
+          <option value="expiry-desc">Latest</option>
+          <option value="name">A–Z</option>
+        </select>
+      </div>
 
       <div v-if="scope === 'all' && allSubsError" class="empty-state">
         <SearchX class="icon-svg" />
@@ -312,14 +399,24 @@ function tapLine(id: string) {
           <div style="min-width: 0; flex: 1">
             <div style="font-weight: 600; font-size: 15px">{{ sub.username }}</div>
             <div style="font-size: 13px; color: var(--tg-hint); margin-top: 2px">
-              {{ sub.expiresFormatted }} · {{ sub.maxConnections }} conn
+              {{ sub.expiresFormatted }} · {{ sub.maxConnections }} conn<template
+                v-if="sub.customerLabel"
+              > · {{ sub.customerLabel }}</template>
             </div>
             <div v-if="scope === 'all'" class="owner-tag">
               {{ sub.ownerName || sub.ownerXuiUsername || `XUI member ${sub.ownerXuiUserId}` }}
             </div>
           </div>
           <div class="line-indicators">
-            <span v-if="sub.customerTelegramId" class="badge-customer" title="Linked to a customer">@</span>
+            <span class="expiry-rel" :class="expiryTextClass(sub)">{{ relativeExpiry(sub) }}</span>
+            <button
+              v-if="sub.resellerNotes"
+              class="note-btn"
+              title="View notes"
+              @click.stop="openNotes(sub)"
+            >
+              <FileText :size="15" />
+            </button>
             <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
             <span class="status-dot" :class="statusDotClass(sub)"></span>
           </div>
@@ -333,6 +430,20 @@ function tapLine(id: string) {
         <button class="page-btn" :disabled="page >= totalPages" @click="setPage(page + 1)">&raquo;</button>
       </div>
     </template>
+
+    <!-- Notes popup -->
+    <Teleport to="body">
+      <div v-if="notesLine" class="modal-overlay" @click.self="closeNotes">
+        <div class="modal">
+          <div class="modal-title">{{ notesLine.username }}</div>
+          <div class="modal-subtitle">Notes</div>
+          <div class="notes-body">{{ notesLine.resellerNotes }}</div>
+          <div class="modal-actions">
+            <button class="modal-btn modal-btn-cancel" @click="closeNotes">Close</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -383,6 +494,29 @@ function tapLine(id: string) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.list-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.list-controls .search-input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.sort-select {
+  flex: 0 0 auto;
+  width: 110px;
+  padding: 10px 8px;
+  border: 1px solid var(--tg-hint);
+  border-radius: 10px;
+  background: var(--tg-secondary-bg);
+  color: var(--tg-text);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.sort-select:focus { border-color: var(--tg-link); }
 .search-input {
   width: 100%;
   padding: 10px 12px;
@@ -460,8 +594,9 @@ function tapLine(id: string) {
 .line-indicators {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
+  margin-left: 8px;
 }
 .status-dot {
   width: 10px;
@@ -472,19 +607,86 @@ function tapLine(id: string) {
 .dot-orange { background: #ff9500; }
 .dot-red { background: #ff3b30; }
 .dot-gray { background: var(--tg-hint); }
-.badge-customer {
+.expiry-rel {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.exp-green { color: #34c759; }
+.exp-orange { color: #ff9500; }
+.exp-red { color: #ff3b30; }
+.exp-gray { color: var(--tg-hint); }
+.note-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  font-size: 11px;
-  font-weight: 700;
+  padding: 4px;
+  border: none;
+  background: none;
   color: var(--tg-link);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.note-btn:active { opacity: 0.6; }
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+.modal {
+  background: var(--tg-bg);
+  border-radius: 14px;
+  padding: 20px;
+  width: 100%;
+  max-width: 340px;
+}
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--tg-text);
+}
+.modal-subtitle {
+  font-size: 12px;
+  color: var(--tg-hint);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* pre-wrap keeps the reseller's own line breaks; a long note scrolls
+   inside the modal rather than pushing the buttons off screen */
+.notes-body {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--tg-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 50vh;
+  overflow-y: auto;
+  text-align: left;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+.modal-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modal-btn-cancel {
   background: var(--tg-secondary-bg);
-  border: 1px solid var(--tg-link);
-  border-radius: 50%;
-  line-height: 1;
+  color: var(--tg-text);
 }
 .badge-adult-off {
   font-size: 10px;

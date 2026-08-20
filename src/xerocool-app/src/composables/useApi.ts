@@ -57,6 +57,7 @@ export interface Subscription {
   resellerNotes: string | null;
   customerUsername: string | null;
   customerTelegramId: number | null;
+  customerLabel?: string | null;
   /** Set on /line/:id when an admin is viewing a line owned by someone else. */
   readOnly?: boolean;
   ownerName?: string | null;

@@ -34,6 +34,12 @@ export function toLineSummary(line: xui.XuiLine, claim?: LineClaim) {
     resellerNotes: line.reseller_notes || null,
     customerUsername: claim?.username || null,
     customerTelegramId: claim?.telegram_id || null,
+    // Pre-formatted for list rows, which have no room to work it out per-field
+    customerLabel: claim
+      ? claim.username
+        ? `@${claim.username}`
+        : claim.first_name || `ID ${claim.telegram_id}`
+      : null,
   };
 }
 
