@@ -244,12 +244,22 @@ function expiryTextClass(sub: any) {
   return "exp-green";
 }
 
-function statusDotClass(sub: any) {
+/** Status is carried by the card's left rail rather than a trailing dot. */
+function railClass(sub: any) {
   const st = getLineStatus(sub);
-  if (st === "disabled") return "dot-gray";
-  if (st === "expired") return "dot-red";
-  if (st === "expiring") return "dot-orange";
-  return "dot-green";
+  if (st === "disabled") return "rail-gray";
+  if (st === "expired") return "rail-red";
+  if (st === "expiring") return "rail-orange";
+  return "rail-green";
+}
+
+/**
+ * A disabled line still has a future expiry, so showing "3mo left" reads as
+ * active. Say Disabled instead — the absolute date stays on the meta line.
+ */
+function expiryLabel(sub: any): string {
+  if (getLineStatus(sub) === "disabled") return "Disabled";
+  return relativeExpiry(sub);
 }
 
 function tapLine(id: string) {
@@ -397,35 +407,34 @@ function tapLine(id: string) {
       <div
         v-for="sub in paginated"
         :key="sub.id"
-        class="card"
+        class="card line-card"
+        :class="railClass(sub)"
         @click="tapLine(sub.id)"
-        style="cursor: pointer"
       >
-        <div class="card-row">
-          <div style="min-width: 0; flex: 1">
-            <div style="font-weight: 600; font-size: 15px">{{ sub.username }}</div>
-            <div style="font-size: 13px; color: var(--tg-hint); margin-top: 2px">
-              {{ sub.expiresFormatted }} · {{ sub.maxConnections }} conn<template
-                v-if="sub.customerLabel"
-              > · {{ sub.customerLabel }}</template>
-            </div>
-            <div v-if="scope === 'all'" class="owner-tag">
-              {{ sub.ownerName || sub.ownerXuiUsername || `XUI member ${sub.ownerXuiUserId}` }}
-            </div>
-          </div>
-          <div class="line-indicators">
-            <span class="expiry-rel" :class="expiryTextClass(sub)">{{ relativeExpiry(sub) }}</span>
-            <button
-              v-if="sub.resellerNotes"
-              class="note-btn"
-              title="View notes"
-              @click.stop="openNotes(sub)"
-            >
-              <FileText :size="15" />
-            </button>
-            <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
-            <span class="status-dot" :class="statusDotClass(sub)"></span>
-          </div>
+        <!-- Two always-present items, so this column never shifts -->
+        <div class="line-head">
+          <span class="line-name">{{ sub.username }}</span>
+          <span class="expiry-rel" :class="expiryTextClass(sub)">{{ expiryLabel(sub) }}</span>
+        </div>
+        <!-- Optional badges live here, where variable length reads as flow -->
+        <div class="line-meta">
+          <span class="meta-text">
+            {{ sub.expiresFormatted }} · {{ sub.maxConnections }} conn<template
+              v-if="sub.customerLabel"
+            > · {{ sub.customerLabel }}</template>
+          </span>
+          <button
+            v-if="sub.resellerNotes"
+            class="note-btn"
+            title="View notes"
+            @click.stop="openNotes(sub)"
+          >
+            <FileText :size="14" />
+          </button>
+          <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
+        </div>
+        <div v-if="scope === 'all'" class="owner-tag">
+          {{ sub.ownerName || sub.ownerXuiUsername || `XUI member ${sub.ownerXuiUserId}` }}
         </div>
       </div>
 
@@ -597,26 +606,49 @@ function tapLine(id: string) {
 .stat-expiring { color: #ff9500; }
 .stat-expired { color: #ff3b30; }
 .stat-disabled { color: var(--tg-hint); }
-.line-indicators {
+/* Status rail: costs no horizontal space and lines up by construction,
+   unlike a trailing dot sharing a column with optional badges */
+.line-card {
+  padding: 11px 14px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.rail-green { border-left-color: #34c759; }
+.rail-orange { border-left-color: #ff9500; }
+.rail-red { border-left-color: #ff3b30; }
+.rail-gray { border-left-color: var(--tg-hint); }
+
+.line-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.line-name {
+  font-weight: 600;
+  font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.line-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  flex-shrink: 0;
-  margin-left: 8px;
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--tg-hint);
 }
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.meta-text {
+  min-width: 0;
 }
-.dot-green { background: #34c759; }
-.dot-orange { background: #ff9500; }
-.dot-red { background: #ff3b30; }
-.dot-gray { background: var(--tg-hint); }
 .expiry-rel {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .exp-green { color: #34c759; }
 .exp-orange { color: #ff9500; }
@@ -626,7 +658,9 @@ function tapLine(id: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
+  /* Negative margin keeps the tap target comfortable without adding row height */
+  padding: 6px;
+  margin: -6px -4px;
   border: none;
   background: none;
   color: var(--tg-link);
