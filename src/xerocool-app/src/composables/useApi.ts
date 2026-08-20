@@ -57,6 +57,19 @@ export interface Subscription {
   resellerNotes: string | null;
   customerUsername: string | null;
   customerTelegramId: number | null;
+  /** Set on /line/:id when an admin is viewing a line owned by someone else. */
+  readOnly?: boolean;
+  ownerName?: string | null;
+  ownerXuiUsername?: string | null;
+  ownerXuiUserId?: string | null;
+}
+
+/** A line from /admin/lines — always carries owner attribution. */
+export interface AdminLine extends Subscription {
+  ownerTelegramId: number | null;
+  ownerName: string | null;
+  ownerXuiUsername: string | null;
+  ownerXuiUserId: string;
 }
 
 export interface XuiPackage {
@@ -165,6 +178,14 @@ export const api = {
 
   // Admin
   adminGetUsers: () => request<any[]>("/admin/users"),
+
+  adminGetLines: () => request<AdminLine[]>("/admin/lines"),
+
+  adminDeleteUser: (telegramId: number) =>
+    request<{ success: boolean; paymentsDeleted: number }>("/admin/delete-user", {
+      method: "POST",
+      body: JSON.stringify({ telegramId }),
+    }),
 
   adminSetApiKey: (telegramId: number, apiKey: string) =>
     request<{ success: boolean }>("/admin/set-api-key", {

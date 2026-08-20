@@ -123,9 +123,13 @@ async function saveGroup() {
   }
 }
 
+const userLabel = computed(
+  () => user.value?.username || user.value?.first_name || String(user.value?.telegram_id ?? "")
+);
+
 async function unlinkUser() {
   if (!user.value) return;
-  tg.showConfirm(`Unlink user ${user.value.username || user.value.telegram_id}?`, async (ok) => {
+  tg.showConfirm(`Unlink user ${userLabel.value}?`, async (ok) => {
     if (!ok) return;
     try {
       await api.adminUnlink(user.value.telegram_id);
@@ -135,6 +139,35 @@ async function unlinkUser() {
       tg.HapticFeedback.notificationOccurred("error");
     }
   });
+}
+
+const deleting = ref(false);
+
+// Removes the user from the bot only — their xui.one account and its lines
+// are untouched, so they can be re-linked later.
+async function deleteUser() {
+  if (!user.value || deleting.value) return;
+  const confirmed = await new Promise<boolean>((resolve) => {
+    tg.showConfirm(
+      `Delete ${userLabel.value} from the bot?\n\n` +
+        `Their payment history here is removed and they lose access until re-linked. ` +
+        `Their xui.one account and all its lines are NOT touched.`,
+      (ok: boolean) => resolve(ok)
+    );
+  });
+  if (!confirmed) return;
+
+  deleting.value = true;
+  try {
+    await api.adminDeleteUser(user.value.telegram_id);
+    tg.HapticFeedback.notificationOccurred("success");
+    router.back();
+  } catch (e: any) {
+    tg.HapticFeedback.notificationOccurred("error");
+    tg.showAlert(e.message || "Failed to delete user");
+  } finally {
+    deleting.value = false;
+  }
 }
 </script>
 
@@ -260,6 +293,13 @@ async function unlinkUser() {
       <button v-if="user.xui_user_id" class="btn-danger-link" @click="unlinkUser">
         Unlink Account
       </button>
+
+      <button class="btn-danger-link btn-danger-strong" :disabled="deleting" @click="deleteUser">
+        {{ deleting ? "Deleting..." : "Delete User" }}
+      </button>
+      <div class="danger-note">
+        Removes this user from the bot. Their xui.one account and lines are left intact.
+      </div>
     </template>
   </div>
 </template>
@@ -361,5 +401,17 @@ async function unlinkUser() {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+}
+.btn-danger-link:disabled { opacity: 0.4; cursor: default; }
+.btn-danger-strong {
+  margin-top: 4px;
+  font-weight: 700;
+}
+.danger-note {
+  text-align: center;
+  font-size: 12px;
+  color: var(--tg-hint);
+  margin: 6px auto 0;
+  max-width: 300px;
 }
 </style>

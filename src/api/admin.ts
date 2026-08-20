@@ -3,8 +3,40 @@ import type { AppDb, DbUser } from "../db/index.js";
 import { parsePermissions } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { ADMIN_IDS, type AuthEnv } from "./auth.js";
+import { buildClaimByLine, ownerLabel, toLineSummary } from "./lines.js";
 
 export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
+  // GET /admin/lines — every line belonging to a linked reseller, annotated
+  // with its owner. Scoped to members the bot knows about rather than the
+  // whole panel, which carries 12k+ lines.
+  api.get("/admin/lines", async (c) => {
+    if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+
+    const owners = db.getAllLinkedUsers.all() as DbUser[];
+    const ownerByMemberId = new Map<string, DbUser>();
+    for (const o of owners) {
+      if (o.xui_user_id) ownerByMemberId.set(String(o.xui_user_id), o);
+    }
+
+    const lines = await xui.getLinesForMembers([...ownerByMemberId.keys()]);
+    if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
+
+    const claimByLine = buildClaimByLine(db);
+
+    return c.json(
+      lines.map((line) => {
+        const owner = ownerByMemberId.get(String(line.member_id));
+        return {
+          ...toLineSummary(line, claimByLine.get(line.id)),
+          ownerTelegramId: owner?.telegram_id ?? null,
+          ownerName: owner ? ownerLabel(owner) : null,
+          ownerXuiUsername: owner?.xui_username ?? null,
+          ownerXuiUserId: String(line.member_id),
+        };
+      })
+    );
+  });
+
   api.get("/admin/users", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const users = db.db
@@ -101,6 +133,28 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const { telegramId } = await c.req.json<{ telegramId: number }>();
     db.linkXui.run(null, null, null, telegramId);
     return c.json({ success: true });
+  });
+
+  // Admin: remove a user from the bot entirely. Their xui.one account and its
+  // lines survive — see deleteUserCascade in db/index.ts.
+  api.post("/admin/delete-user", async (c) => {
+    const callerId = c.get("telegramId");
+    if (!ADMIN_IDS.has(callerId)) return c.json({ error: "Forbidden" }, 403);
+
+    const { telegramId } = await c.req.json<{ telegramId: number }>();
+    if (!Number.isInteger(telegramId)) return c.json({ error: "Invalid telegram id" }, 400);
+    if (telegramId === callerId) {
+      return c.json({ error: "You can't delete your own account" }, 400);
+    }
+
+    const target = db.getUser.get(telegramId) as DbUser | undefined;
+    if (!target) return c.json({ error: "User not found" }, 404);
+
+    const removed = db.deleteUserCascade(telegramId);
+    console.log(
+      `[admin] ${callerId} deleted user ${telegramId} (${removed.payments} payment row(s) removed)`
+    );
+    return c.json({ success: true, paymentsDeleted: removed.payments });
   });
 
   api.post("/admin/set-reseller-group", async (c) => {

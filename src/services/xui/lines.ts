@@ -33,16 +33,28 @@ export async function getLineAsReseller(
   }
 }
 
+const LINE_LIST_COLUMNS =
+  "id,username,member_id,exp_date,max_connections,enabled,admin_enabled,bouquet,reseller_notes";
+
 /**
- * Fetch all lines owned by a user via mysql_query.
- * XUI's get_lines endpoint has no server-side member_id filter (12k+ total).
+ * Fetch every line owned by the given member IDs via mysql_query.
+ * XUI's get_lines endpoint has no server-side member_id filter (12k+ total),
+ * so the query is scoped to the IDs we actually care about.
  * Only numeric IDs accepted to prevent SQL injection.
  */
-export async function getUserLines(xuiUserId: string): Promise<XuiLine[] | null> {
-  const id = parseInt(xuiUserId, 10);
-  if (!Number.isFinite(id) || id <= 0) return null;
+export async function getLinesForMembers(
+  memberIds: (string | number)[]
+): Promise<XuiLine[] | null> {
+  const ids = [
+    ...new Set(
+      memberIds
+        .map((v) => parseInt(String(v), 10))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    ),
+  ];
+  if (ids.length === 0) return [];
 
-  const sql = `SELECT id,username,member_id,exp_date,max_connections,enabled,admin_enabled,bouquet,reseller_notes FROM \`lines\` WHERE member_id=${id} ORDER BY id DESC`;
+  const sql = `SELECT ${LINE_LIST_COLUMNS} FROM \`lines\` WHERE member_id IN (${ids.join(",")}) ORDER BY id DESC`;
   const params = new URLSearchParams({
     api_key: process.env.XUI_ADMIN_API_KEY!,
     action: "mysql_query",
@@ -58,9 +70,16 @@ export async function getUserLines(xuiUserId: string): Promise<XuiLine[] | null>
 
     return Array.isArray(data.data) ? data.data : Object.values(data.data);
   } catch (e) {
-    console.error("[xui] getUserLines failed:", e);
+    console.error("[xui] getLinesForMembers failed:", e);
     return null;
   }
+}
+
+/** Fetch all lines owned by a single user. */
+export async function getUserLines(xuiUserId: string): Promise<XuiLine[] | null> {
+  const id = parseInt(xuiUserId, 10);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  return getLinesForMembers([id]);
 }
 
 /**

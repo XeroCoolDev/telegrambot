@@ -17,6 +17,16 @@ loadUser();
 const { data: line, loading } = useAsync(() => api.getLine(props.id));
 const maxConns = computed(() => user.value?.config?.maxConnections ?? 3);
 
+// Set by the API when an admin opens a line belonging to another reseller.
+// Everything that mutates the line runs against the caller's own reseller key,
+// so those actions are hidden rather than left to fail.
+const readOnly = computed(() => line.value?.readOnly === true);
+const ownerLabel = computed(() => {
+  const l = line.value;
+  if (!l) return "";
+  return l.ownerName || l.ownerXuiUsername || `XUI member ${l.ownerXuiUserId}`;
+});
+
 const toggling = ref(false);
 const togglingEnabled = ref(false);
 const claimCopied = ref(false);
@@ -286,6 +296,17 @@ function statusLabel(sub: any) {
         </div>
       </div>
 
+      <!-- Owner banner (admin viewing another reseller's line) -->
+      <div v-if="readOnly" class="owner-banner">
+        <div class="owner-banner-row">
+          <span class="owner-banner-label">Owner</span>
+          <span class="owner-banner-value">{{ ownerLabel }}</span>
+        </div>
+        <div class="owner-banner-note">
+          Read-only — this line belongs to another reseller.
+        </div>
+      </div>
+
       <!-- Info -->
       <div class="card" style="margin-top: 12px">
 
@@ -298,7 +319,12 @@ function statusLabel(sub: any) {
             <span class="card-label">Notes</span>
             <span class="card-value" style="font-size: 13px">{{ line.resellerNotes || '—' }}</span>
           </div>
-          <div class="card-row" style="margin-top: 4px">
+          <!-- The toggles card is hidden in read-only mode, so surface its state here -->
+          <div v-if="readOnly" class="card-row">
+            <span class="card-label">Adult Content</span>
+            <span class="card-value" style="font-size: 13px">{{ line.adultEnabled ? 'Enabled' : 'Disabled' }}</span>
+          </div>
+          <div v-if="!readOnly" class="card-row" style="margin-top: 4px">
             <span></span>
             <button class="btn-edit" @click="startEditing">Edit</button>
           </div>
@@ -323,7 +349,7 @@ function statusLabel(sub: any) {
       </div>
 
       <!-- Toggles -->
-      <div class="card" style="margin-top: 12px">
+      <div v-if="!readOnly" class="card" style="margin-top: 12px">
         <div class="card-row" style="cursor: pointer" @click="toggleEnabled">
           <div>
             <span class="card-label">Line Enabled</span>
@@ -361,7 +387,7 @@ function statusLabel(sub: any) {
       </div>
 
       <!-- Send to customer + linked list -->
-      <div v-if="user?.canShareWithCustomers" class="card" style="margin-top: 12px">
+      <div v-if="user?.canShareWithCustomers && !readOnly" class="card" style="margin-top: 12px">
         <div class="card-row" style="cursor: pointer" @click="copyClaimCommand">
           <span class="card-label">Send to customer</span>
           <span class="btn-edit">{{ claimCopied ? 'Copied!' : 'Copy' }}</span>
@@ -378,7 +404,7 @@ function statusLabel(sub: any) {
         </div>
       </div>
 
-      <div style="margin-top: 16px; display: flex; gap: 8px">
+      <div v-if="!readOnly" style="margin-top: 16px; display: flex; gap: 8px">
         <button
           v-if="line.expDate !== null"
           class="btn btn-secondary"
@@ -397,7 +423,11 @@ function statusLabel(sub: any) {
         </button>
       </div>
 
-      <button v-if="user?.permissions?.canDeleteLine !== false" class="btn-delete" @click="openDeleteModal">
+      <button
+        v-if="!readOnly && user?.permissions?.canDeleteLine !== false"
+        class="btn-delete"
+        @click="openDeleteModal"
+      >
         Delete Line
       </button>
     </template>
@@ -435,6 +465,35 @@ function statusLabel(sub: any) {
 </template>
 
 <style scoped>
+.owner-banner {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--tg-secondary-bg);
+  border-radius: 12px;
+  border-left: 3px solid var(--tg-link);
+}
+.owner-banner-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.owner-banner-label {
+  font-size: 13px;
+  color: var(--tg-hint);
+}
+.owner-banner-value {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.owner-banner-note {
+  font-size: 12px;
+  color: var(--tg-hint);
+  margin-top: 4px;
+}
 .copy-block {
   background: var(--tg-secondary-bg);
   border-radius: 12px;

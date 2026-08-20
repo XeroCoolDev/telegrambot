@@ -3,7 +3,7 @@ export default { name: "Dashboard" };
 </script>
 
 <script setup lang="ts">
-import { computed, ref, onActivated } from "vue";
+import { computed, ref, onActivated, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Link2Off, Satellite, SearchX } from "lucide-vue-next";
 import { useStore } from "../composables/useStore";
@@ -11,15 +11,20 @@ import { useStore } from "../composables/useStore";
 const router = useRouter();
 const tg = window.Telegram.WebApp;
 
-const { user, subs, userLoading, subsLoading, loadUser, loadSubs } = useStore();
+const {
+  user,
+  subs,
+  allSubs,
+  userLoading,
+  subsLoading,
+  allSubsLoading,
+  allSubsError,
+  loadUser,
+  loadSubs,
+  loadAllSubs,
+} = useStore();
 loadUser();
 loadSubs();
-
-// Re-fetch when returning to this page (keep-alive reactivation)
-onActivated(() => {
-  loadUser();
-  loadSubs();
-});
 
 const loading = computed(() => userLoading.value || subsLoading.value);
 
@@ -27,6 +32,75 @@ const search = ref("");
 const page = ref(1);
 const perPage = 20;
 const statusFilter = ref<"active" | "expiring" | "expired" | "disabled" | null>(null);
+
+// ── Admin scope: own lines vs every linked reseller's lines ──
+const scope = ref<"mine" | "all">("mine");
+const ownerFilter = ref<string | null>(null);
+
+function setScope(next: "mine" | "all") {
+  if (scope.value === next) return;
+  scope.value = next;
+  ownerFilter.value = null;
+  page.value = 1;
+  tg.HapticFeedback.selectionChanged();
+  if (next === "all") loadAllSubs();
+}
+
+// Reset paging whenever the owner filter moves
+watch(ownerFilter, () => { page.value = 1; });
+
+// An admin with no reseller account of their own has no "my lines" to show,
+// so drop them straight into the all-lines view — that's their whole dashboard.
+watch(
+  user,
+  (u) => {
+    if (u?.isAdmin && !u.linked && scope.value !== "all") {
+      scope.value = "all";
+      loadAllSubs();
+    }
+  },
+  { immediate: true }
+);
+
+// Re-fetch when returning to this page (keep-alive reactivation)
+onActivated(() => {
+  loadUser();
+  loadSubs();
+  if (scope.value === "all") loadAllSubs();
+});
+
+/** The list the page is currently working from, before any filtering. */
+const scopedSubs = computed<any[] | null>(() =>
+  scope.value === "all" ? (allSubs.value as any[] | null) : (subs.value as any[] | null)
+);
+
+/** Distinct owners in the all-lines set, for the filter dropdown. */
+const owners = computed(() => {
+  if (scope.value !== "all" || !allSubs.value) return [];
+  const byId = new Map<string, { id: string; label: string; count: number }>();
+  for (const s of allSubs.value as any[]) {
+    const id = String(s.ownerXuiUserId);
+    const existing = byId.get(id);
+    if (existing) {
+      existing.count++;
+    } else {
+      byId.set(id, {
+        id,
+        label: s.ownerName || s.ownerXuiUsername || `XUI member ${id}`,
+        count: 1,
+      });
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+});
+
+/** Owner filter applied — stats and the list both work from here. */
+const ownerScoped = computed<any[]>(() => {
+  const list = scopedSubs.value;
+  if (!list) return [];
+  if (scope.value !== "all" || !ownerFilter.value) return list;
+  return list.filter((s) => String(s.ownerXuiUserId) === ownerFilter.value);
+});
 
 function getLineStatus(s: any): "active" | "expiring" | "expired" | "disabled" {
   if (s.status === "disabled") return "disabled";
@@ -43,8 +117,7 @@ function toggleFilter(filter: "active" | "expiring" | "expired" | "disabled") {
 }
 
 const filtered = computed(() => {
-  if (!subs.value) return [];
-  let result = subs.value as any[];
+  let result = ownerScoped.value;
 
   if (statusFilter.value) {
     result = result.filter((s) => getLineStatus(s) === statusFilter.value);
@@ -59,7 +132,9 @@ const filtered = computed(() => {
         s.id?.toString().includes(q) ||
         s.resellerNotes?.toLowerCase().includes(q) ||
         s.customerUsername?.toLowerCase().includes(qBare) ||
-        s.customerTelegramId?.toString().includes(qBare)
+        s.customerTelegramId?.toString().includes(qBare) ||
+        s.ownerName?.toLowerCase().includes(qBare) ||
+        s.ownerXuiUsername?.toLowerCase().includes(qBare)
     );
   }
 
@@ -67,16 +142,15 @@ const filtered = computed(() => {
 });
 
 const stats = computed(() => {
-  if (!subs.value) return { active: 0, expiring: 0, expired: 0, disabled: 0, total: 0 };
   let active = 0, expiring = 0, expired = 0, disabled = 0;
-  for (const s of subs.value as any[]) {
+  for (const s of ownerScoped.value) {
     const st = getLineStatus(s);
     if (st === "disabled") disabled++;
     else if (st === "expired") expired++;
     else if (st === "expiring") expiring++;
     else active++;
   }
-  return { active, expiring, expired, disabled, total: subs.value.length };
+  return { active, expiring, expired, disabled, total: ownerScoped.value.length };
 });
 
 const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / perPage)));
@@ -118,10 +192,8 @@ function tapLine(id: string) {
       </div>
     </template>
 
-    <template v-else-if="!user || !user.linked">
-      <div v-if="user?.isAdmin" style="margin-bottom: 16px">
-        <button class="btn btn-secondary" @click="router.push('/admin')">Admin</button>
-      </div>
+    <!-- Unlinked, and not an admin — nothing to show them -->
+    <template v-else-if="!user || (!user.linked && !user.isAdmin)">
       <div class="empty-state">
         <Link2Off class="icon-svg" />
         <p>Your account isn't linked yet.<br />Please contact an administrator to get started.</p>
@@ -130,12 +202,17 @@ function tapLine(id: string) {
 
     <template v-else-if="user">
       <div style="font-size: 13px; color: var(--tg-hint); margin-bottom: 12px">
-        Logged in as <b style="color: var(--tg-text)">{{ user.xuiUsername }}</b>
+        <template v-if="user.linked">
+          Logged in as <b style="color: var(--tg-text)">{{ user.xuiUsername }}</b>
+        </template>
+        <template v-else>
+          Signed in as <b style="color: var(--tg-text)">admin</b> — no reseller account linked
+        </template>
       </div>
 
       <!-- Stats -->
-      <div class="stats-grid">
-        <div class="stat-card stat-card-credits" @click="router.push('/buy')">
+      <div class="stats-grid" :class="{ 'stats-grid-4': !user.linked }">
+        <div v-if="user.linked" class="stat-card stat-card-credits" @click="router.push('/buy')">
           <div class="stat-value">{{ user.credits }}</div>
           <div class="stat-label">Credits</div>
         </div>
@@ -157,12 +234,12 @@ function tapLine(id: string) {
         </div>
       </div>
 
-      <!-- Actions -->
+      <!-- Actions — buying and creating both need the caller's own reseller key -->
       <div style="display: flex; gap: 8px; margin-bottom: 16px">
-        <button v-if="user.permissions?.canBuyCredits !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/buy')">
+        <button v-if="user.linked && user.permissions?.canBuyCredits !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/buy')">
           + Buy Credits
         </button>
-        <button v-if="user.permissions?.canCreateLine !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/create')">
+        <button v-if="user.linked && user.permissions?.canCreateLine !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/create')">
           + New Line
         </button>
         <button v-if="user.isAdmin" class="btn btn-secondary" style="flex: 1" @click="router.push('/admin')">
@@ -173,12 +250,29 @@ function tapLine(id: string) {
       <!-- Subscriptions -->
       <div class="section-header" style="display: flex; justify-content: space-between; align-items: center">
         <span>Lines</span>
-        <span style="font-size: 13px; font-weight: 400; color: var(--tg-hint)">{{ filtered.length }} of {{ subs?.length || 0 }}</span>
+        <span style="font-size: 13px; font-weight: 400; color: var(--tg-hint)">{{ filtered.length }} of {{ ownerScoped.length }}</span>
       </div>
+
+      <!-- Admin scope toggle — nothing to switch to when there's no own account -->
+      <div v-if="user.isAdmin && user.linked" class="scope-toggle">
+        <button class="scope-btn" :class="{ active: scope === 'mine' }" @click="setScope('mine')">My lines</button>
+        <button class="scope-btn" :class="{ active: scope === 'all' }" @click="setScope('all')">All lines</button>
+      </div>
+
+      <!-- Owner filter (all-lines mode) -->
+      <select
+        v-if="scope === 'all' && owners.length > 0"
+        v-model="ownerFilter"
+        class="owner-select"
+        @click.stop
+      >
+        <option :value="null">All resellers ({{ scopedSubs?.length || 0 }})</option>
+        <option v-for="o in owners" :key="o.id" :value="o.id">{{ o.label }} ({{ o.count }})</option>
+      </select>
 
       <!-- Search -->
       <input
-        v-if="subs && subs.length > 0"
+        v-if="scopedSubs && scopedSubs.length > 0"
         v-model="search"
         type="search"
         placeholder="Search lines..."
@@ -187,14 +281,24 @@ function tapLine(id: string) {
         @click.stop
       />
 
-      <div v-if="!subs || subs.length === 0" class="empty-state">
+      <div v-if="scope === 'all' && allSubsError" class="empty-state">
+        <SearchX class="icon-svg" />
+        <p>{{ allSubsError }}</p>
+      </div>
+
+      <div v-else-if="scope === 'all' && allSubsLoading && !allSubs" class="empty-state">
+        <p>Loading all lines...</p>
+      </div>
+
+      <div v-else-if="!scopedSubs || scopedSubs.length === 0" class="empty-state">
         <Satellite class="icon-svg" />
         <p>No active lines found.</p>
       </div>
 
       <div v-else-if="filtered.length === 0" class="empty-state">
         <SearchX class="icon-svg" />
-        <p>No lines match "{{ search }}"</p>
+        <p v-if="search">No lines match "{{ search }}"</p>
+        <p v-else>No lines match the current filter.</p>
       </div>
 
       <div
@@ -209,6 +313,9 @@ function tapLine(id: string) {
             <div style="font-weight: 600; font-size: 15px">{{ sub.username }}</div>
             <div style="font-size: 13px; color: var(--tg-hint); margin-top: 2px">
               {{ sub.expiresFormatted }} · {{ sub.maxConnections }} conn
+            </div>
+            <div v-if="scope === 'all'" class="owner-tag">
+              {{ sub.ownerName || sub.ownerXuiUsername || `XUI member ${sub.ownerXuiUserId}` }}
             </div>
           </div>
           <div class="line-indicators">
@@ -230,6 +337,52 @@ function tapLine(id: string) {
 </template>
 
 <style scoped>
+.scope-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: var(--tg-secondary-bg);
+  border-radius: 10px;
+  padding: 3px;
+}
+.scope-btn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  background: none;
+  color: var(--tg-hint);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.scope-btn.active {
+  background: var(--tg-btn);
+  color: var(--tg-btn-text);
+}
+.owner-select {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--tg-hint);
+  border-radius: 10px;
+  background: var(--tg-secondary-bg);
+  color: var(--tg-text);
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+.owner-select:focus {
+  border-color: var(--tg-link);
+}
+.owner-tag {
+  font-size: 12px;
+  color: var(--tg-link);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .search-input {
   width: 100%;
   padding: 10px 12px;
@@ -280,6 +433,10 @@ function tapLine(id: string) {
   grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-bottom: 16px;
+}
+/* Admin with no reseller account of their own — no credits card to show */
+.stats-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
 }
 .stat-card {
   background: var(--tg-secondary-bg);

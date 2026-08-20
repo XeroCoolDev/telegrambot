@@ -89,11 +89,16 @@ function shortDate(str: string | null | undefined): string {
               <div v-if="!u.xui_user_id" style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
                 unlinked
               </div>
-              <div v-else style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
-                {{ u.credits == null ? '— credits' : `${u.credits} credits` }}
-                <template v-if="u.lastTopUp"> · Last top: {{ u.lastTopUp.credits }} ({{ shortDate(u.lastTopUp.at) }})</template>
-                <template v-if="u.last_accessed"> · Active: {{ shortDate(u.last_accessed) }}</template>
-              </div>
+              <template v-else>
+                <div class="panel-user">
+                  {{ u.xui_username || `XUI #${u.xui_user_id}` }}
+                </div>
+                <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
+                  {{ u.credits == null ? '— credits' : `${u.credits} credits` }}
+                  <template v-if="u.lastTopUp"> · Last top: {{ u.lastTopUp.credits }} ({{ shortDate(u.lastTopUp.at) }})</template>
+                  <template v-if="u.last_accessed"> · Active: {{ shortDate(u.last_accessed) }}</template>
+                </div>
+              </template>
             </div>
             <span style="font-size: 18px; color: var(--tg-hint)">›</span>
           </div>
@@ -178,6 +183,14 @@ function shortDate(str: string | null | undefined): string {
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 6px;
+  white-space: nowrap;
+}
+.panel-user {
+  font-size: 12px;
+  color: var(--tg-link);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .status-pill.settled { background: #1b4332; color: #52c41a; }

@@ -174,6 +174,9 @@ export function initDb(path: string) {
       "UPDATE users SET reseller_group_chat_id = ? WHERE telegram_id = ?"
     ),
     getAllLinkedUsers: db.prepare("SELECT * FROM users WHERE xui_user_id IS NOT NULL"),
+    getUserByXuiId: db.prepare<[string]>("SELECT * FROM users WHERE xui_user_id = ? LIMIT 1"),
+    deleteUserPayments: db.prepare<[number]>("DELETE FROM payments WHERE telegram_id = ?"),
+    deleteUserRow: db.prepare<[number]>("DELETE FROM users WHERE telegram_id = ?"),
 
     // ── Payments ──
     insertPayment: db.prepare(`
@@ -281,5 +284,20 @@ export function initDb(path: string) {
     ),
   };
 
-  return { db, ...stmts };
+  /**
+   * Remove a reseller from the bot's own records. Payments go first because
+   * payments.telegram_id has a FK onto users and foreign_keys is ON.
+   *
+   * Deliberately scoped to this database — the user's xui.one panel account
+   * and every line under it are left untouched, so the pairing can be
+   * re-created later with /link. Customer-side tables (customers,
+   * customer_claims, support_topics) key off customer Telegram IDs, a
+   * separate population, and are not touched either.
+   */
+  const deleteUserCascade = db.transaction((telegramId: number) => ({
+    payments: stmts.deleteUserPayments.run(telegramId).changes,
+    users: stmts.deleteUserRow.run(telegramId).changes,
+  }));
+
+  return { db, ...stmts, deleteUserCascade };
 }

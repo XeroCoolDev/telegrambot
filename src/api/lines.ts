@@ -1,7 +1,46 @@
 import type { Hono } from "hono";
-import type { AppDb } from "../db/index.js";
+import type { AppDb, DbUser } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
-import { requirePerm, type AuthEnv } from "./auth.js";
+import { ADMIN_IDS, requirePerm, type AuthEnv } from "./auth.js";
+
+export interface LineClaim {
+  xui_line_id: string;
+  telegram_id: number;
+  username: string | null;
+  first_name: string | null;
+}
+
+/** line_id → first linked customer, for annotating line lists. */
+export function buildClaimByLine(db: AppDb): Map<string, LineClaim> {
+  const rows = db.getAllClaimsWithCustomer.all() as LineClaim[];
+  const map = new Map<string, LineClaim>();
+  for (const r of rows) {
+    if (!map.has(r.xui_line_id)) map.set(r.xui_line_id, r);
+  }
+  return map;
+}
+
+/** Shared list-row shape for /subscriptions and /admin/lines. */
+export function toLineSummary(line: xui.XuiLine, claim?: LineClaim) {
+  return {
+    id: line.id,
+    username: line.username,
+    status: xui.isLineEnabled(line) ? "active" : "disabled",
+    expDate: xui.normaliseExpDate(line.exp_date),
+    expiresFormatted: xui.formatExpiry(line.exp_date),
+    daysLeft: xui.daysUntilExpiry(line.exp_date),
+    maxConnections: line.max_connections,
+    adultEnabled: xui.hasAdultBouquets(line),
+    resellerNotes: line.reseller_notes || null,
+    customerUsername: claim?.username || null,
+    customerTelegramId: claim?.telegram_id || null,
+  };
+}
+
+/** Display name for a reseller, preferring whatever is most recognisable. */
+export function ownerLabel(owner: DbUser): string {
+  return owner.username || owner.first_name || owner.xui_username || String(owner.telegram_id);
+}
 
 export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
   // GET /subscriptions — live lines from xui.one
@@ -12,45 +51,38 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const lines = await xui.getUserLines(xuiUserId);
     if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
 
-    // Build a map of line_id → first linked customer (if any)
-    const claimRows = db.getAllClaimsWithCustomer.all() as {
-      xui_line_id: string;
-      telegram_id: number;
-      username: string | null;
-      first_name: string | null;
-    }[];
-    const claimByLine = new Map<string, typeof claimRows[number]>();
-    for (const r of claimRows) {
-      if (!claimByLine.has(r.xui_line_id)) claimByLine.set(r.xui_line_id, r);
-    }
-
-    return c.json(
-      lines.map((line) => {
-        const claim = claimByLine.get(line.id);
-        return {
-          id: line.id,
-          username: line.username,
-          status: xui.isLineEnabled(line) ? "active" : "disabled",
-          expDate: xui.normaliseExpDate(line.exp_date),
-          expiresFormatted: xui.formatExpiry(line.exp_date),
-          daysLeft: xui.daysUntilExpiry(line.exp_date),
-          maxConnections: line.max_connections,
-          adultEnabled: xui.hasAdultBouquets(line),
-          resellerNotes: line.reseller_notes || null,
-          customerUsername: claim?.username || null,
-          customerTelegramId: claim?.telegram_id || null,
-        };
-      })
-    );
+    const claimByLine = buildClaimByLine(db);
+    return c.json(lines.map((line) => toLineSummary(line, claimByLine.get(line.id))));
   });
 
   // GET /line/:id — single line details
   api.get("/line/:id", async (c) => {
     const xuiApiKey = c.get("xuiApiKey");
-    if (!xuiApiKey) return c.json({ error: "Account not linked" }, 400);
+    const xuiUserId = c.get("xuiUserId");
+    const isAdmin = ADMIN_IDS.has(c.get("telegramId"));
+    if (!xuiApiKey && !isAdmin) return c.json({ error: "Account not linked" }, 400);
 
-    const lineData = await xui.getLineAsReseller(xuiApiKey, c.req.param("id"));
+    let lineData = xuiApiKey
+      ? await xui.getLineAsReseller(xuiApiKey, c.req.param("id"))
+      : null;
+
+    // Admins can open any reseller's line. The reseller API is scoped to the
+    // caller's own lines, so a miss here usually means it belongs to someone
+    // else — fall back to the admin API. Ownership is then decided on
+    // member_id rather than on the miss itself, so a transient reseller-API
+    // failure doesn't wrongly mark the admin's own line read-only. Every
+    // mutating route below still runs on the caller's own key, so this grants
+    // view access only.
+    let readOnly = false;
+    if (!lineData && isAdmin) {
+      lineData = await xui.getLine(c.req.param("id"));
+      readOnly = !!lineData && String(lineData.member_id) !== String(xuiUserId);
+    }
     if (!lineData) return c.json({ error: "Line not found" }, 404);
+
+    const owner = readOnly
+      ? (db.getUserByXuiId.get(String(lineData.member_id)) as DbUser | undefined)
+      : undefined;
 
     return c.json({
       id: lineData.id,
@@ -66,6 +98,10 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
       contact: lineData.contact || null,
       resellerNotes: lineData.reseller_notes || null,
       adultEnabled: xui.hasAdultBouquets(lineData),
+      readOnly,
+      ownerName: owner ? ownerLabel(owner) : null,
+      ownerXuiUsername: owner?.xui_username ?? null,
+      ownerXuiUserId: readOnly ? String(lineData.member_id) : null,
     });
   });
 
