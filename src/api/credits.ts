@@ -8,18 +8,22 @@ import { upsertInvoiceMessage } from "../services/invoice-message.js";
 import { requirePerm, type AuthEnv } from "./auth.js";
 
 export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
-  // GET /credit-options — items from BTCPay POS app
+  // GET /credit-options — purchasable items from the BTCPay POS app.
+  // Disabled and out-of-stock items are filtered out here; BTCPay returns them
+  // in the payload and expects the caller to honour the flags.
   api.get("/credit-options", async (c) => {
     const posApp = await btcpay.fetchPosApp();
-    if (!posApp?.items?.length) {
+    const available = (posApp?.items || []).filter(btcpay.isItemAvailable);
+    if (!posApp || !available.length) {
       return c.json({ error: "No credit options available" }, 404);
     }
     return c.json({
       currency: posApp.currency,
-      items: posApp.items.map((item) => ({
+      items: available.map((item) => ({
         id: item.id,
         title: item.title,
-        price: item.price,
+        price: String(item.price),
+        credits: btcpay.creditsForItem(item),
       })),
     });
   });
@@ -68,15 +72,25 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
 
-    const { itemId, credits, price, itemTitle } = await c.req.json<{
-      itemId: string;
-      credits: number;
-      price: string;
-      itemTitle: string;
-    }>();
+    // Only the item id is taken from the client. Price, credit amount and
+    // title are all read back from the POS app, so a crafted request can't
+    // name its own price or mint extra credits. Extra fields sent by older
+    // cached clients are ignored.
+    const { itemId } = await c.req.json<{ itemId: string }>();
 
     const posApp = await btcpay.fetchPosApp();
     if (!posApp) return c.json({ error: "Payment system unavailable" }, 502);
+
+    const item = (posApp.items || []).find((i) => i.id === itemId);
+    if (!item || !btcpay.isItemAvailable(item)) {
+      return c.json({ error: "That credit package is no longer available" }, 400);
+    }
+
+    const price = String(item.price);
+    const credits = btcpay.creditsForItem(item);
+    if (credits <= 0) {
+      return c.json({ error: "This package has no credit amount configured" }, 400);
+    }
 
     const invoice = await btcpay.createInvoice({
       price,
@@ -84,8 +98,8 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
       metadata: {
         xuiUserId,
         credits,
-        itemDesc: itemTitle,
-        itemCode: itemId,
+        itemDesc: item.title,
+        itemCode: item.id,
       },
     });
 
@@ -97,7 +111,7 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
       credits,
       price,
       posApp.currency,
-      itemTitle,
+      item.title,
       xuiUserId,
       invoice.checkoutLink
     );

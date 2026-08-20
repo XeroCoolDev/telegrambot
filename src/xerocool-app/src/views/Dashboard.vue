@@ -316,8 +316,14 @@ function tapLine(id: string) {
 
       <!-- Actions — buying and creating both need the caller's own reseller key -->
       <div style="display: flex; gap: 8px; margin-bottom: 16px">
-        <button v-if="user.linked && user.permissions?.canBuyCredits !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/buy')">
-          + Buy Credits
+        <!-- Admins get in even unlinked, to preview what resellers see -->
+        <button
+          v-if="(user.linked && user.permissions?.canBuyCredits !== false) || user.isAdmin"
+          class="btn btn-secondary"
+          style="flex: 1"
+          @click="router.push('/buy')"
+        >
+          {{ user.linked && user.permissions?.canBuyCredits !== false ? "+ Buy Credits" : "Credit Packages" }}
         </button>
         <button v-if="user.linked && user.permissions?.canCreateLine !== false" class="btn btn-secondary" style="flex: 1" @click="router.push('/create')">
           + New Line

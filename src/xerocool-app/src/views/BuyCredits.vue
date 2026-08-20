@@ -1,9 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import { AlertTriangle } from "lucide-vue-next";
 import { api, useAsync } from "../composables/useApi";
+import { useStore } from "../composables/useStore";
 
 const tg = window.Telegram.WebApp;
+
+const { user, loadUser } = useStore();
+loadUser();
+
+/**
+ * Admins can open this page to see exactly what resellers see, but buying
+ * needs a linked panel account to credit — so the page renders read-only
+ * rather than offering a purchase that would fail.
+ */
+const canPurchase = computed(
+  () => !!user.value?.linked && user.value?.permissions?.canBuyCredits !== false
+);
 
 const { data: options, loading, error } = useAsync(() => api.getCreditOptions());
 const { data: pending, loading: pendingLoading, refresh: refreshPending } = useAsync(() => api.getPendingPayments());
@@ -21,15 +34,12 @@ onUnmounted(() => {
 });
 
 async function buyItem(item: any) {
-  if (purchasing.value) return;
+  if (!canPurchase.value || purchasing.value) return;
   purchasing.value = item.id;
   tg.HapticFeedback.impactOccurred("medium");
 
   try {
-    const creditsMatch = item.title.match(/(\d+)/);
-    const credits = creditsMatch ? parseInt(creditsMatch[1], 10) : 0;
-
-    const result = await api.buyCredits({ ...item, credits });
+    const result = await api.buyCredits(item);
     refreshPending();
     tg.openLink(result.checkoutUrl);
   } catch (e: any) {
@@ -99,12 +109,22 @@ function timeAgo(dateStr: string): string {
     </template>
 
     <template v-else-if="options">
+      <div v-if="!canPurchase" class="preview-banner">
+        <strong>Preview</strong> — this is the screen your resellers see.
+        <template v-if="!user?.linked">
+          You have no panel account linked, so there's nothing to credit.
+        </template>
+        <template v-else>
+          Credit purchasing is turned off for your account.
+        </template>
+      </div>
+
       <div
         v-for="item in options.items"
         :key="item.id"
         class="card"
+        :style="canPurchase ? 'cursor: pointer' : 'cursor: default'"
         @click="buyItem(item)"
-        style="cursor: pointer"
       >
         <div class="card-row">
           <div>
@@ -123,6 +143,10 @@ function timeAgo(dateStr: string): string {
 
       <p style="text-align: center; font-size: 12px; color: var(--tg-hint); margin-top: 16px; padding: 0 16px; line-height: 1.5">
         Payments are processed via BTCPay. Credits will be added automatically once payment is confirmed.
+      </p>
+
+      <p v-if="!canPurchase" style="text-align: center; font-size: 12px; color: var(--tg-hint); margin-top: 8px; padding: 0 16px; line-height: 1.5">
+        Packages disabled or out of stock in BTCPay are hidden here, exactly as they are for resellers.
       </p>
     </template>
 
@@ -175,6 +199,19 @@ function timeAgo(dateStr: string): string {
 </template>
 
 <style scoped>
+.preview-banner {
+  background: var(--tg-secondary-bg);
+  border-left: 3px solid var(--tg-link);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tg-hint);
+}
+.preview-banner strong {
+  color: var(--tg-text);
+}
 .pending-card {
   border-left: 3px solid var(--tg-link);
 }

@@ -106,6 +106,8 @@ export interface CreditOption {
   id: string;
   title: string;
   price: string;
+  /** Derived server-side from the item title */
+  credits: number;
 }
 
 export interface CreditOptions {
@@ -134,15 +136,12 @@ export const api = {
       "/payment-history"
     ),
 
-  buyCredits: (item: CreditOption & { credits: number }) =>
+  // Only the id is sent — the server reads price, credits and title back from
+  // the POS app so they can't be forged client-side.
+  buyCredits: (item: CreditOption) =>
     request<{ invoiceId: string; checkoutUrl: string }>("/buy-credits", {
       method: "POST",
-      body: JSON.stringify({
-        itemId: item.id,
-        credits: item.credits,
-        price: item.price,
-        itemTitle: item.title,
-      }),
+      body: JSON.stringify({ itemId: item.id }),
     }),
 
   updateLineInfo: (lineId: string, fields: { contact?: string; resellerNotes?: string }) =>

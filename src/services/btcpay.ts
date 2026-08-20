@@ -7,8 +7,37 @@ const TIMEOUT = Number(process.env.API_TIMEOUT_MS || 10000);
 export interface PosAppItem {
   id: string;
   title: string;
-  price: string;
-  // additional fields from your POS config
+  /** Nullable in BTCPay — Topup/Minimum price types carry no fixed price */
+  price: string | null;
+  priceType?: string;
+  /** Remaining stock; null/absent means unlimited */
+  inventory?: number | null;
+  /** BTCPay: "If true, the item does not appear in the list by default" */
+  disabled?: boolean;
+}
+
+/**
+ * BTCPay returns disabled and out-of-stock items in the app payload — the
+ * `disabled` flag is documented as "the item does not appear in the list by
+ * default", so filtering them out is the consumer's job, not the API's.
+ *
+ * Used for both listing and purchase validation, so a package disabled in
+ * BTCPay can't be listed *or* bought.
+ */
+export function isItemAvailable(item: PosAppItem): boolean {
+  if (item.disabled) return false;
+  if (typeof item.inventory === "number" && item.inventory <= 0) return false;
+  // A credit package needs a fixed price to charge against
+  if (item.price === null || item.price === undefined || String(item.price).trim() === "") {
+    return false;
+  }
+  return true;
+}
+
+/** Credit count is the first number in the item title — "100 Credits" → 100. */
+export function creditsForItem(item: PosAppItem): number {
+  const match = String(item.title || "").match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
 }
 
 export interface PosApp {
@@ -59,7 +88,12 @@ async function btcpayRequest<T>(
 
 let posAppCache: { data: PosApp; expiry: number } | null = null;
 
-/** Fetch POS app data (cached for 1 hour). Credit packages are defined here. */
+// Short TTL: this payload gates both what's listed and what can be bought, so
+// enabling or disabling a package in BTCPay should take effect promptly rather
+// than after an hour. Only fetched when someone opens the buy screen.
+const POS_CACHE_TTL_MS = 5 * 60_000;
+
+/** Fetch POS app data (briefly cached). Credit packages are defined here. */
 export async function fetchPosApp(): Promise<PosApp | null> {
   if (posAppCache && Date.now() < posAppCache.expiry) {
     return posAppCache.data;
@@ -70,7 +104,7 @@ export async function fetchPosApp(): Promise<PosApp | null> {
   );
 
   if (data) {
-    posAppCache = { data, expiry: Date.now() + 3600_000 };
+    posAppCache = { data, expiry: Date.now() + POS_CACHE_TTL_MS };
   }
   return data;
 }
