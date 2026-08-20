@@ -24,16 +24,27 @@ function escapeMd(text: string): string {
 const NOTE_PREVIEW_MAX = 40;
 
 /**
- * First line of a reseller's note, capped — notes run to many lines and a
+ * Opening line of a reseller's note, capped — notes run to many lines and a
  * reminder listing a dozen expiring lines has to stay scannable.
+ *
+ * Uses the first non-empty line rather than literally the first, so a note
+ * that starts with a blank line still previews instead of vanishing. Anything
+ * dropped — further lines or an over-long first one — is marked with an
+ * ellipsis, so a truncated note never reads as the whole note.
  */
 function notePreview(notes: string | null | undefined): string {
   if (!notes) return "";
-  const firstLine = String(notes).split(/\r?\n/)[0].trim();
-  if (!firstLine) return "";
-  return firstLine.length > NOTE_PREVIEW_MAX
-    ? `${firstLine.slice(0, NOTE_PREVIEW_MAX - 1).trimEnd()}…`
-    : firstLine;
+  const lines = String(notes)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return "";
+
+  const first = lines[0];
+  if (first.length > NOTE_PREVIEW_MAX) {
+    return `${first.slice(0, NOTE_PREVIEW_MAX - 1).trimEnd()}…`;
+  }
+  return lines.length > 1 ? `${first}…` : first;
 }
 
 /** One bullet: username, plus a note preview when the line has one. */
