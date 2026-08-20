@@ -416,8 +416,10 @@ function tapLine(id: string) {
           <span class="line-name">{{ sub.username }}</span>
           <span class="expiry-rel" :class="expiryTextClass(sub)">{{ expiryLabel(sub) }}</span>
         </div>
-        <!-- Optional badges live here, where variable length reads as flow -->
+        <!-- 18+ anchors left, notes anchor right: both land at the same x on
+             every row, so the note button is always where the thumb expects -->
         <div class="line-meta">
+          <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
           <span class="meta-text">
             {{ sub.expiresFormatted }} · {{ sub.maxConnections }} conn<template
               v-if="sub.customerLabel"
@@ -429,9 +431,8 @@ function tapLine(id: string) {
             title="View notes"
             @click.stop="openNotes(sub)"
           >
-            <FileText :size="14" />
+            <FileText :size="16" />
           </button>
-          <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
         </div>
         <div v-if="scope === 'all'" class="owner-tag">
           {{ sub.ownerName || sub.ownerXuiUsername || `XUI member ${sub.ownerXuiUserId}` }}
@@ -635,14 +636,20 @@ function tapLine(id: string) {
 .line-meta {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
   margin-top: 3px;
   font-size: 13px;
   color: var(--tg-hint);
+  /* Reserve the note button's height so rows stay level with and without it */
+  min-height: 24px;
 }
+/* No wrap: the metadata truncates rather than pushing the note button
+   onto a second line, which would move it off its column */
 .meta-text {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .expiry-rel {
   font-size: 12px;
@@ -658,9 +665,10 @@ function tapLine(id: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Negative margin keeps the tap target comfortable without adding row height */
-  padding: 6px;
-  margin: -6px -4px;
+  /* margin-left:auto pins it to the card's right edge; the negative margins
+     buy a ~32px tap target without making the row any taller */
+  margin: -8px -6px -8px auto;
+  padding: 8px;
   border: none;
   background: none;
   color: var(--tg-link);
