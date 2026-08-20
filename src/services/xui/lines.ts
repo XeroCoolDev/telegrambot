@@ -33,8 +33,11 @@ export async function getLineAsReseller(
   }
 }
 
+// password is included so the lines list can offer copy-to-clipboard without
+// a second round trip per line — the same caller can already read it from
+// /line/:id, so this exposes nothing new, just sooner.
 const LINE_LIST_COLUMNS =
-  "id,username,member_id,exp_date,max_connections,enabled,admin_enabled,bouquet,reseller_notes";
+  "id,username,password,member_id,exp_date,max_connections,enabled,admin_enabled,bouquet,reseller_notes";
 
 /**
  * Fetch every line owned by the given member IDs via mysql_query.

@@ -5,7 +5,7 @@ export default { name: "Dashboard" };
 <script setup lang="ts">
 import { computed, ref, onActivated, watch } from "vue";
 import { useRouter } from "vue-router";
-import { FileText, Link2Off, Satellite, SearchX } from "lucide-vue-next";
+import { Check, Copy, FileText, Link2Off, Satellite, SearchX } from "lucide-vue-next";
 import { useStore } from "../composables/useStore";
 
 const router = useRouter();
@@ -121,30 +121,36 @@ function compareExpiry(a: any, b: any): number {
 }
 
 /**
- * Expiry as a human interval — the list is scanned for urgency far more often
- * than for exact dates, and the absolute date stays on the row alongside it.
- * Uses the server's calendar-day daysLeft so this agrees with the status dot
- * and the reminder scheduler.
+ * Beyond this, the absolute date on the metadata line already says everything
+ * useful and a countdown is noise — so only lines you can actually act on
+ * carry one, which is what makes them stand out.
  */
-function relativeExpiry(s: any): string {
-  if (s.expDate === null || s.daysLeft === null) return "Unlimited";
+const EXPIRY_HORIZON_DAYS = 60;
 
-  if (s.expDate * 1000 < Date.now()) {
-    const ago = Math.max(0, -s.daysLeft);
+/**
+ * The top-right slot: a countdown only when it's actionable, "Disabled" for
+ * disabled lines, otherwise empty. Uses the server's calendar-day daysLeft so
+ * this agrees with the rail colour and the reminder scheduler.
+ */
+function expiryLabel(sub: any): string {
+  if (getLineStatus(sub) === "disabled") return "Disabled";
+  if (sub.expDate === null || sub.daysLeft === null) return "";
+
+  if (sub.expDate * 1000 < Date.now()) {
+    const ago = Math.max(0, -sub.daysLeft);
     if (ago === 0) return "expired today";
-    if (ago < 30) return `expired ${ago}d`;
-    if (ago < 365) return `expired ${Math.round(ago / 30)}mo`;
-    return `expired ${Math.floor(ago / 365)}y`;
+    // Step up whole units only, so one duration never has two spellings
+    const months = Math.floor(ago / 30);
+    if (months >= 12) return `expired ${Math.floor(months / 12)}y`;
+    if (months >= 1) return `expired ${months}mo`;
+    return `expired ${ago}d`;
   }
 
-  const d = s.daysLeft;
+  const d = sub.daysLeft;
+  if (d > EXPIRY_HORIZON_DAYS) return "";
   if (d <= 0) return "today";
   if (d === 1) return "tomorrow";
-  if (d < 30) return `${d}d left`;
-  if (d < 365) return `${Math.round(d / 30)}mo left`;
-  const years = Math.floor(d / 365);
-  const months = Math.round((d - years * 365) / 30);
-  return months > 0 ? `${years}y ${months}mo left` : `${years}y left`;
+  return `${d}d left`;
 }
 
 // ── Notes popup ──
@@ -253,13 +259,28 @@ function railClass(sub: any) {
   return "rail-green";
 }
 
-/**
- * A disabled line still has a future expiry, so showing "3mo left" reads as
- * active. Say Disabled instead — the absolute date stays on the meta line.
- */
-function expiryLabel(sub: any): string {
-  if (getLineStatus(sub) === "disabled") return "Disabled";
-  return relativeExpiry(sub);
+// ── Copy line details ──
+const copiedId = ref<string | null>(null);
+
+/** Same text as the line details page, so both routes produce one message. */
+async function copyLine(sub: any) {
+  const text = [
+    `Username: ${sub.username}`,
+    `Password: ${sub.password || "N/A"}`,
+    `Expires: ${sub.expiresDateTime || sub.expiresFormatted}`,
+    `Connections: ${sub.maxConnections}`,
+  ].join("\n");
+
+  try {
+    await navigator.clipboard.writeText(text);
+    copiedId.value = sub.id;
+    tg.HapticFeedback.notificationOccurred("success");
+    setTimeout(() => {
+      if (copiedId.value === sub.id) copiedId.value = null;
+    }, 1500);
+  } catch {
+    tg.HapticFeedback.notificationOccurred("error");
+  }
 }
 
 function tapLine(id: string) {
@@ -411,28 +432,36 @@ function tapLine(id: string) {
         :class="railClass(sub)"
         @click="tapLine(sub.id)"
       >
-        <!-- Two always-present items, so this column never shifts -->
         <div class="line-head">
           <span class="line-name">{{ sub.username }}</span>
-          <span class="expiry-rel" :class="expiryTextClass(sub)">{{ expiryLabel(sub) }}</span>
+          <span v-if="expiryLabel(sub)" class="expiry-rel" :class="expiryTextClass(sub)">
+            {{ expiryLabel(sub) }}
+          </span>
         </div>
-        <!-- 18+ anchors left, notes anchor right: both land at the same x on
-             every row, so the note button is always where the thumb expects -->
+        <!-- Cluster is pinned bottom-right. Copy is always present so it
+             anchors the edge; the notes slot is reserved even when empty, so
+             nothing in here ever shifts between rows. -->
         <div class="line-meta">
-          <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
           <span class="meta-text">
             {{ sub.expiresFormatted }} · {{ sub.maxConnections }} conn<template
               v-if="sub.customerLabel"
             > · {{ sub.customerLabel }}</template>
           </span>
-          <button
-            v-if="sub.resellerNotes"
-            class="note-btn"
-            title="View notes"
-            @click.stop="openNotes(sub)"
-          >
-            <FileText :size="16" />
-          </button>
+          <div class="line-actions">
+            <span v-if="!sub.adultEnabled" class="badge-adult-off">18+</span>
+            <button
+              class="icon-btn"
+              :class="{ 'icon-btn-reserved': !sub.resellerNotes }"
+              :disabled="!sub.resellerNotes"
+              title="View notes"
+              @click.stop="openNotes(sub)"
+            >
+              <FileText :size="16" />
+            </button>
+            <button class="icon-btn" title="Copy details" @click.stop="copyLine(sub)">
+              <component :is="copiedId === sub.id ? Check : Copy" :size="16" />
+            </button>
+          </div>
         </div>
         <div v-if="scope === 'all'" class="owner-tag">
           {{ sub.ownerName || sub.ownerXuiUsername || `XUI member ${sub.ownerXuiUserId}` }}
@@ -661,21 +690,35 @@ function tapLine(id: string) {
 .exp-orange { color: #ff9500; }
 .exp-red { color: #ff3b30; }
 .exp-gray { color: var(--tg-hint); }
-.note-btn {
+.line-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Pins the cluster to the card's bottom-right corner */
+  margin-left: auto;
+  padding-left: 8px;
+  flex-shrink: 0;
+}
+.icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* margin-left:auto pins it to the card's right edge; the negative margins
-     buy a ~32px tap target without making the row any taller */
-  margin: -8px -6px -8px auto;
-  padding: 8px;
+  /* Negative vertical margin buys a ~30px tap target without adding height */
+  padding: 7px;
+  margin: -7px 0;
   border: none;
   background: none;
   color: var(--tg-link);
   cursor: pointer;
   flex-shrink: 0;
 }
-.note-btn:active { opacity: 0.6; }
+.icon-btn:active { opacity: 0.5; }
+/* Holds the notes slot open on lines without notes, so the badge and copy
+   button beside it stay in the same column on every row */
+.icon-btn-reserved {
+  visibility: hidden;
+  pointer-events: none;
+}
 .modal-overlay {
   position: fixed;
   inset: 0;

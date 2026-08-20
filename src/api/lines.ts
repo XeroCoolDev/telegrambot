@@ -25,9 +25,13 @@ export function toLineSummary(line: xui.XuiLine, claim?: LineClaim) {
   return {
     id: line.id,
     username: line.username,
+    // password and the timestamped expiry back the list's copy button, which
+    // produces the same text as the line details page
+    password: line.password || null,
     status: xui.isLineEnabled(line) ? "active" : "disabled",
     expDate: xui.normaliseExpDate(line.exp_date),
     expiresFormatted: xui.formatExpiry(line.exp_date),
+    expiresDateTime: xui.formatExpiryWithTime(line.exp_date),
     daysLeft: xui.daysUntilExpiry(line.exp_date),
     maxConnections: line.max_connections,
     adultEnabled: xui.hasAdultBouquets(line),

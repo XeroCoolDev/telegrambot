@@ -48,9 +48,11 @@ export interface UserInfo {
 export interface Subscription {
   id: string;
   username: string;
+  password?: string | null;
   status: "active" | "disabled";
   expDate: number | null;
   expiresFormatted: string;
+  expiresDateTime?: string;
   daysLeft: number | null;
   maxConnections: string;
   adultEnabled: boolean;
