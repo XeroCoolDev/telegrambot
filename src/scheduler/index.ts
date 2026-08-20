@@ -20,6 +20,28 @@ function escapeMd(text: string): string {
   return text.replace(/[_*`[]/g, "\\$&");
 }
 
+/** Longest note preview shown beside a username in a reminder. */
+const NOTE_PREVIEW_MAX = 40;
+
+/**
+ * First line of a reseller's note, capped — notes run to many lines and a
+ * reminder listing a dozen expiring lines has to stay scannable.
+ */
+function notePreview(notes: string | null | undefined): string {
+  if (!notes) return "";
+  const firstLine = String(notes).split(/\r?\n/)[0].trim();
+  if (!firstLine) return "";
+  return firstLine.length > NOTE_PREVIEW_MAX
+    ? `${firstLine.slice(0, NOTE_PREVIEW_MAX - 1).trimEnd()}…`
+    : firstLine;
+}
+
+/** One bullet: username, plus a note preview when the line has one. */
+function lineBullet(line: xui.XuiLine): string {
+  const note = notePreview(line.reseller_notes);
+  return note ? `• \`${line.username}\` — ${escapeMd(note)}` : `• \`${line.username}\``;
+}
+
 function sectionHeading(daysLeft: number, expDate: string | number | null): string {
   if (daysLeft === 0) return "*Today*";
   if (daysLeft === 1) return "*Tomorrow*";
@@ -83,13 +105,13 @@ export function startScheduler(db: AppDb, bot: Bot) {
           const header = bucket.length === 1
             ? `⚠️ *Subscription expiring ${dayLabel(daysLeft)}*`
             : `⚠️ *${bucket.length} subscriptions expiring ${dayLabel(daysLeft)}*`;
-          const lineList = bucket.map((l) => `• \`${l.username}\``).join("\n");
+          const lineList = bucket.map(lineBullet).join("\n");
           body = `${header}\n\n${lineList}`;
         } else {
           const sections = activeDays
             .map((daysLeft) => {
               const bucket = buckets.get(daysLeft)!;
-              const lineList = bucket.map((l) => `• \`${l.username}\``).join("\n");
+              const lineList = bucket.map(lineBullet).join("\n");
               return `${sectionHeading(daysLeft, bucket[0].exp_date)}\n${lineList}`;
             })
             .join("\n\n");
