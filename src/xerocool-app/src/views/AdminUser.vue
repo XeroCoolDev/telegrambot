@@ -2,7 +2,7 @@
 import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { HelpCircle, Eye, EyeOff } from "lucide-vue-next";
-import { api, useAsync, type Permissions } from "../composables/useApi";
+import { api, useAsync, type AdminUserPayments, type Permissions } from "../composables/useApi";
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
@@ -121,6 +121,49 @@ async function saveGroup() {
   } finally {
     savingGroup.value = false;
   }
+}
+
+// ── Payments ledger (paged server-side) ──
+const payments = ref<AdminUserPayments | null>(null);
+const paymentsPage = ref(1);
+const paymentsLoading = ref(false);
+const paymentsError = ref<string | null>(null);
+
+async function loadPayments() {
+  paymentsLoading.value = true;
+  paymentsError.value = null;
+  try {
+    payments.value = await api.adminGetUserPayments(Number(props.id), paymentsPage.value, 10);
+    // The API clamps the page to the real range; follow it so the pager
+    // doesn't sit on a number that no longer exists.
+    paymentsPage.value = payments.value.page;
+  } catch (e: any) {
+    paymentsError.value = e.message || "Failed to load payments";
+  } finally {
+    paymentsLoading.value = false;
+  }
+}
+loadPayments();
+
+function setPaymentsPage(p: number) {
+  const last = payments.value?.totalPages ?? 1;
+  const next = Math.max(1, Math.min(p, last));
+  if (next === paymentsPage.value) return;
+  paymentsPage.value = next;
+  tg.HapticFeedback.selectionChanged();
+  loadPayments();
+}
+
+function formatStamp(str: string | null | undefined): string {
+  if (!str) return "";
+  // SQLite datetime('now') is UTC without a zone marker
+  const d = new Date(str.replace(" ", "T") + "Z");
+  if (isNaN(d.getTime())) return String(str);
+  return (
+    d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) +
+    " " +
+    d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+  );
 }
 
 const userLabel = computed(
@@ -283,6 +326,53 @@ async function deleteUser() {
         </div>
       </div>
 
+      <!-- Payments -->
+      <div class="section-header" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: baseline">
+        <span>Payments<template v-if="payments"> ({{ payments.total }})</template></span>
+        <span v-if="payments && payments.settledCredits > 0" class="settled-total">
+          {{ payments.settledCredits }} credits settled
+        </span>
+      </div>
+
+      <div v-if="paymentsError" class="card">
+        <div class="card-row"><span class="card-value" style="font-size: 13px">{{ paymentsError }}</span></div>
+      </div>
+
+      <div v-else-if="!payments && paymentsLoading" class="card">
+        <div class="card-row"><span class="card-value" style="font-size: 13px">Loading...</span></div>
+      </div>
+
+      <div v-else-if="payments && payments.total === 0" class="card">
+        <div class="card-row">
+          <span class="card-value" style="font-size: 13px; color: var(--tg-hint)">No payments yet.</span>
+        </div>
+      </div>
+
+      <template v-else-if="payments">
+        <div :class="{ 'payments-busy': paymentsLoading }">
+          <div v-for="p in payments.payments" :key="p.btcpay_invoice_id" class="card">
+            <div class="card-row">
+              <div style="min-width: 0; flex: 1">
+                <div style="font-weight: 600; font-size: 14px">{{ p.item_title }}</div>
+                <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
+                  {{ p.amount }} {{ p.currency }} · {{ p.credits }} credits
+                </div>
+                <div style="font-size: 11px; color: var(--tg-hint); margin-top: 2px">
+                  {{ formatStamp(p.created_at) }}
+                </div>
+              </div>
+              <span class="status-pill" :class="p.status">{{ p.status }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="payments.totalPages > 1" class="pagination">
+          <button class="page-btn" :disabled="paymentsPage <= 1" @click="setPaymentsPage(paymentsPage - 1)">&laquo;</button>
+          <span class="page-info">{{ payments.page }} / {{ payments.totalPages }}</span>
+          <button class="page-btn" :disabled="paymentsPage >= payments.totalPages" @click="setPaymentsPage(paymentsPage + 1)">&raquo;</button>
+        </div>
+      </template>
+
       <!-- Actions -->
       <div style="margin-top: 16px; display: flex; gap: 8px">
         <button class="btn btn-primary" style="flex: 1" :disabled="saving" @click="savePermissions">
@@ -390,6 +480,61 @@ async function deleteUser() {
 }
 .toggle input:checked + .toggle-slider::before {
   transform: translateX(20px);
+}
+.settled-total {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--tg-hint);
+}
+/* Dim the current page while the next one is in flight, so the pager
+   stays put instead of collapsing to a spinner and back */
+.payments-busy {
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 8px;
+  text-transform: capitalize;
+}
+.status-pill.settled { background: #1b4332; color: #52c41a; }
+.status-pill.pending,
+.status-pill.processing,
+.status-pill.settling { background: #3b2e00; color: #faad14; }
+.status-pill.expired,
+.status-pill.failed,
+.status-pill.invalid { background: #3b1111; color: #ff4d4f; }
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 8px 0;
+}
+.page-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: var(--tg-btn);
+  color: var(--tg-btn-text);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.page-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.page-info {
+  font-size: 14px;
+  color: var(--tg-hint);
 }
 .btn-danger-link {
   display: block;

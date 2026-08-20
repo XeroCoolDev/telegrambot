@@ -65,6 +65,26 @@ export interface Subscription {
   ownerXuiUserId?: string | null;
 }
 
+export interface AdminPayment {
+  btcpay_invoice_id: string;
+  credits: number;
+  amount: string;
+  currency: string;
+  item_title: string;
+  status: string;
+  created_at: string;
+}
+
+/** One page of a single user's payment ledger. */
+export interface AdminUserPayments {
+  payments: AdminPayment[];
+  total: number;
+  settledCredits: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+}
+
 /** A line from /admin/lines — always carries owner attribution. */
 export interface AdminLine extends Subscription {
   ownerTelegramId: number | null;
@@ -181,6 +201,11 @@ export const api = {
   adminGetUsers: () => request<any[]>("/admin/users"),
 
   adminGetLines: () => request<AdminLine[]>("/admin/lines"),
+
+  adminGetUserPayments: (telegramId: number, page = 1, perPage = 10) =>
+    request<AdminUserPayments>(
+      `/admin/user/${telegramId}/payments?page=${page}&perPage=${perPage}`
+    ),
 
   adminDeleteUser: (telegramId: number) =>
     request<{ success: boolean; paymentsDeleted: number }>("/admin/delete-user", {

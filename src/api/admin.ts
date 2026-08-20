@@ -88,6 +88,37 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     return c.json(payments);
   });
 
+  // GET /admin/user/:telegramId/payments — one user's ledger, paged.
+  // Paged server-side rather than shipping the whole history and slicing in
+  // the app: a long-running reseller accumulates hundreds of rows.
+  api.get("/admin/user/:telegramId/payments", async (c) => {
+    if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
+
+    const telegramId = Number(c.req.param("telegramId"));
+    if (!Number.isInteger(telegramId)) return c.json({ error: "Invalid telegram id" }, 400);
+
+    const perPage = Math.min(50, Math.max(1, Number(c.req.query("perPage")) || 10));
+    const summary = db.getUserPaymentsSummary.get(telegramId) as {
+      total: number;
+      settledCredits: number;
+    };
+    const totalPages = Math.max(1, Math.ceil(summary.total / perPage));
+    // Clamp rather than trusting the caller — an out-of-range page would
+    // otherwise return an empty list and strand the pager.
+    const page = Math.min(totalPages, Math.max(1, Number(c.req.query("page")) || 1));
+
+    const payments = db.getUserPaymentsPage.all(telegramId, perPage, (page - 1) * perPage);
+
+    return c.json({
+      payments,
+      total: summary.total,
+      settledCredits: summary.settledCredits,
+      page,
+      perPage,
+      totalPages,
+    });
+  });
+
   api.post("/admin/link", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId, xuiUserId } = await c.req.json<{ telegramId: number; xuiUserId: string }>();

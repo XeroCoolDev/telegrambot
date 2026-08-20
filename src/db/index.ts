@@ -199,6 +199,22 @@ export function initDb(path: string) {
     getPaymentHistory: db.prepare<[number]>(
       "SELECT * FROM payments WHERE telegram_id = ? AND status IN ('settled', 'failed', 'expired', 'invalid') ORDER BY created_at DESC LIMIT 5"
     ),
+    // Admin: one user's payment ledger, paged.
+    // created_at only has second granularity, so id breaks ties — without a
+    // total order LIMIT/OFFSET can skip or repeat rows across pages.
+    getUserPaymentsPage: db.prepare<[number, number, number]>(
+      `SELECT btcpay_invoice_id, credits, amount, currency, item_title, status, created_at
+       FROM payments
+       WHERE telegram_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT ? OFFSET ?`
+    ),
+    getUserPaymentsSummary: db.prepare<[number]>(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN status = 'settled' THEN credits ELSE 0 END), 0) AS settledCredits
+       FROM payments
+       WHERE telegram_id = ?`
+    ),
     updatePaymentStatus: db.prepare("UPDATE payments SET status = ? WHERE btcpay_invoice_id = ?"),
     setPaymentStatusMessageId: db.prepare(
       "UPDATE payments SET status_message_id = ? WHERE btcpay_invoice_id = ?"
