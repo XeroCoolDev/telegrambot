@@ -182,11 +182,11 @@ export const api = {
 
   getLineClaims: (lineId: string) =>
     request<Array<{ telegram_id: number; username: string | null; first_name: string | null; created_at: string }>>(
-      `/xerocool/line-claims/${lineId}`
+      `/line-claims/${lineId}`
     ),
 
   unclaimCustomer: (lineId: string, telegramId: number) =>
-    request<{ success: boolean }>("/xerocool/unclaim", {
+    request<{ success: boolean }>("/unclaim", {
       method: "POST",
       body: JSON.stringify({ lineId, telegramId }),
     }),

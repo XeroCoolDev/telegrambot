@@ -54,7 +54,10 @@ async function loadClaims() {
   claimsLoading.value = true;
   try {
     claims.value = await api.getLineClaims(line.value.id);
-  } catch {
+  } catch (e) {
+    // Degrade to an empty list, but say so — a silent catch here hid a
+    // bad request path that left this list permanently empty.
+    console.error("[claims] Failed to load linked customers:", e);
     claims.value = [];
   } finally {
     claimsLoading.value = false;
