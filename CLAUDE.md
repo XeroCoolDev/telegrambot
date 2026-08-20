@@ -9,8 +9,15 @@
 - `pnpm dev` — run server with tsx watch
 - `cd src/xerocool-app && pnpm dev` — run XeroCool (reseller) mini-app dev server
 - `cd src/xposed-app && pnpm dev` — run Xposed (customer) mini-app dev server
-- `pnpm build` — compile server TypeScript
-- `docker compose up -d --build` — deploy on Saltbox
+- `pnpm build` — compile server TypeScript (`tsc --strict`; excludes both mini-apps)
+- `sb install mod-telegrambot` — deploy on Saltbox
+
+## Deployment
+- Deploys run from `/opt/telegrambot/repo`, which the Ansible role **hard-resets to `origin/main`** (`git` module, `force: true`). Always `git push origin main` before deploying — unpushed commits and uncommitted edits are destroyed.
+- Only `main` ships; a feature branch needs `telegrambot_docker_build_branch` overridden in the inventory.
+- Mini-apps build with plain `vite build` and are **not** type-checked. Use `pnpm exec vue-tsc --noEmit` inside `src/xerocool-app` / `src/xposed-app` to check them.
+- Env vars come from the Saltbox inventory (`telegrambot_docker_envs_custom`), not `.env` — that's local dev only.
+- `/opt/telegrambot/data/bot.db` is bind-mounted and survives rebuilds; schema changes must stay additive and guarded, as in `src/db/index.ts`.
 
 ## Architecture
 - XUI API uses query-string `?action=X` format, NOT REST paths

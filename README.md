@@ -10,8 +10,9 @@ Telegram bot and mini app for managing xui.one IPTV subscriptions with BTCPay Bi
 - **Connection upgrades** — dynamic pricing with discount/multiplier logic
 - **Adult content toggle** — per-line bouquet control
 - **Expiry reminders** — daily notifications for expiring lines
-- **Search & filter** — paginated line list with status filtering
-- **Admin panel** — manage users, view payments, link/unlink accounts
+- **Search, filter & sort** — paginated line list with status filtering, relative expiry ("3d left"), sort by expiry/name, and a notes popup per line
+- **Admin panel** — manage users, view payments, link/unlink and delete accounts, see each user's credits and panel username
+- **Admin all-lines view** — admins can browse every linked reseller's lines from the dashboard, filtered by owner; other resellers' lines open read-only
 
 ### Customer (Xposed) Bot (optional)
 - **One-tap claim** — reseller pastes `/link <id>` in the customer's support topic; customer taps a callback button to bind their Telegram account
@@ -54,11 +55,90 @@ Set the ngrok URL as `XEROCOOL_WEBAPP_URL` in `.env` and in BotFather's Menu But
 
 ## Deployment (Saltbox)
 
-See [saltbox-telegrambot](https://github.com/XeroCoolDev/saltbox-telegrambot) for the Ansible role and deployment instructions.
+Deployed by the [saltbox-telegrambot](https://github.com/XeroCoolDev/saltbox-telegrambot) Ansible role, installed as a `saltbox_mod`. See that repo for first-time setup (bootstrapping the role, registering it in the playbook, inventory config).
+
+Once installed, one command deploys:
+
+```bash
+sb install mod-telegrambot
+```
+
+That command, in order:
+
+1. Creates/updates the Cloudflare DNS records for both subdomains
+2. Removes the running `telegrambot` container
+3. **Clones or force-resets `/opt/telegrambot/repo` to `origin/main`**
+4. Builds the Docker image from that checkout
+5. Recreates the container behind Traefik
+
+### Push before you deploy
+
+Step 3 runs Ansible's `git` module with `force: true` and `version: main`. It hard-resets the working tree to `origin/main`, so **anything that hasn't reached GitHub is destroyed** — uncommitted edits *and* local commits that only exist on the server.
+
+`/opt/telegrambot/repo` is a real git clone, so editing in place is fine. Just never deploy before pushing.
+
+Deploys always track `main`. A feature branch won't ship unless you override `telegrambot_docker_build_branch` in the inventory.
+
+### Making a change
+
+```bash
+cd /opt/telegrambot/repo
+
+# 1. Edit
+
+# 2. Typecheck (optional, needs Node 22 + pnpm on the host).
+#    The server is compiled with `tsc --strict`, so a type error here
+#    becomes a failed image build halfway through the deploy.
+pnpm install && pnpm build
+
+# 3. Commit and push — REQUIRED before deploying, see above
+git add -A src
+git commit -m "feat: ..."
+git push origin main
+
+# 4. Deploy
+sb install mod-telegrambot
+```
+
+Note that `pnpm build` at the root only compiles the **server** — `tsconfig.json` excludes both mini-apps. The Vue apps build with plain `vite build` and are never type-checked, so TS errors in `.vue` files surface as runtime bugs rather than build failures. To check them explicitly:
+
+```bash
+cd src/xerocool-app && pnpm exec vue-tsc --noEmit
+cd src/xposed-app   && pnpm exec vue-tsc --noEmit
+```
+
+### Verifying a deploy
+
+```bash
+docker logs -f telegrambot          # expect: [db], [bot], [api], [scheduler] lines
+curl -s https://<xerocool-subdomain>.<domain>/health
+```
+
+Then open the mini app from Telegram. Mini apps are aggressively cached — if you don't see your change, fully close and reopen the app rather than just backing out of it.
+
+### What survives a rebuild
+
+The SQLite database at `/opt/telegrambot/data/bot.db` is bind-mounted and untouched by rebuilds. Schema changes are applied on boot by the migration block in `src/db/index.ts`, which is additive (`ALTER TABLE ... ADD COLUMN` guarded by a `PRAGMA table_info` check) — so a redeploy never drops data.
+
+### Changing configuration
+
+Environment variables come from the Saltbox inventory, not from `.env` (that file is for local dev only):
+
+```bash
+sb edit inventory
+```
+
+Edit `telegrambot_docker_envs_custom`, then re-run `sb install mod-telegrambot`.
+
+### Updating the Ansible role
+
+```bash
+cd /opt/saltbox_mod/roles/telegrambot && sudo git pull
+```
 
 ## Configuration
 
-See `.env.example` for all available environment variables.
+See `.env.example` for all available environment variables, and the [role README](https://github.com/XeroCoolDev/saltbox-telegrambot) for the inventory equivalents and their defaults.
 
 ## Project Structure
 
