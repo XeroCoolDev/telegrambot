@@ -24,33 +24,50 @@ function escapeMd(text: string): string {
 const NOTE_PREVIEW_MAX = 40;
 
 /**
+ * Wrap text so Telegram renders it as inline code, which taps to copy.
+ *
+ * Markdown specials are already literal inside a code span, so escapeMd must
+ * NOT be used here — its backslashes would show up in the message. The one
+ * character that matters is the backtick, which would close the span early
+ * and corrupt the rest of the message.
+ */
+function codeSpan(text: string): string {
+  return `\`${String(text).replace(/`/g, "'")}\``;
+}
+
+/**
  * Opening line of a reseller's note, capped — notes run to many lines and a
  * reminder listing a dozen expiring lines has to stay scannable.
  *
  * Uses the first non-empty line rather than literally the first, so a note
- * that starts with a blank line still previews instead of vanishing. Anything
- * dropped — further lines or an over-long first one — is marked with an
- * ellipsis, so a truncated note never reads as the whole note.
+ * that starts with a blank line still previews instead of vanishing. Reports
+ * truncation separately so the caller can put the ellipsis outside the
+ * tap-to-copy span — copying should yield the note text, not a stray "…".
  */
-function notePreview(notes: string | null | undefined): string {
-  if (!notes) return "";
+function notePreview(notes: string | null | undefined): { text: string; truncated: boolean } {
+  if (!notes) return { text: "", truncated: false };
   const lines = String(notes)
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
-  if (lines.length === 0) return "";
+  if (lines.length === 0) return { text: "", truncated: false };
 
   const first = lines[0];
   if (first.length > NOTE_PREVIEW_MAX) {
-    return `${first.slice(0, NOTE_PREVIEW_MAX - 1).trimEnd()}…`;
+    return { text: first.slice(0, NOTE_PREVIEW_MAX).trimEnd(), truncated: true };
   }
-  return lines.length > 1 ? `${first}…` : first;
+  return { text: first, truncated: lines.length > 1 };
 }
 
-/** One bullet: username, plus a note preview when the line has one. */
+/**
+ * One bullet: username and note preview as separate tap-to-copy spans, so
+ * either can be lifted out of the message on its own.
+ */
 function lineBullet(line: xui.XuiLine): string {
+  const bullet = `• ${codeSpan(line.username)}`;
   const note = notePreview(line.reseller_notes);
-  return note ? `• \`${line.username}\` — ${escapeMd(note)}` : `• \`${line.username}\``;
+  if (!note.text) return bullet;
+  return `${bullet} — ${codeSpan(note.text)}${note.truncated ? "…" : ""}`;
 }
 
 function sectionHeading(daysLeft: number, expDate: string | number | null): string {
