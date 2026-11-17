@@ -304,7 +304,7 @@ export function initDb(path: string) {
    * Remove a reseller from the bot's own records. Payments go first because
    * payments.telegram_id has a FK onto users and foreign_keys is ON.
    *
-   * Deliberately scoped to this database — the user's xui.one panel account
+   * Deliberately scoped to this database — the user's panel account
    * and every line under it are left untouched, so the pairing can be
    * re-created later with /link. Customer-side tables (customers,
    * customer_claims, support_topics) key off customer Telegram IDs, a

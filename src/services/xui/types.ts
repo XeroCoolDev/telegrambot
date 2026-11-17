@@ -1,8 +1,13 @@
+/**
+ * Internal panel shapes. They are string-typed because they were modelled on
+ * xui.one's API; the XUI.live Engine objects are mapped onto them in
+ * engine.ts so the rest of the bot is unchanged.
+ */
 export interface XuiUser {
   id: string;
   username: string;
-  credits: string; // XUI returns credits as string
-  api_key: string;
+  credits: string; // whole or decimal number as text, e.g. "12" or "12.5"
+  api_key: string; // the reseller's key as stored by the bot; never returned by the panel
   reseller_dns: string;
 }
 
@@ -10,20 +15,20 @@ export interface XuiLine {
   id: string;
   username: string;
   password: string;
-  exp_date: string | number | null; // unix timestamp (string from get_lines, number from get_line)
+  exp_date: string | number | null; // unix timestamp, null = never expires
   max_connections: string;
-  bouquet: string; // JSON array string (only from get_line)
-  allowed_outputs: string; // JSON array string (only from get_line)
-  member_id: string;
+  bouquet: string; // JSON array string of bouquet ids
+  allowed_outputs: string; // JSON array string ("ts", "m3u8", "rtmp")
+  member_id: string; // owning account id
   admin_notes: string;
   reseller_notes: string;
   contact: string;
   force_server_id: string;
-  is_trial: string;
+  is_trial: string; // "0" | "1"
   last_ip: string | null;
-  enabled: string; // "0" | "1" from get_lines
-  admin_enabled: string; // "0" | "1" from get_lines
-  status: number; // 0 | 1 from get_line
+  enabled: string; // "0" | "1" — the line's own switch
+  admin_enabled: string; // "0" | "1" — "0" when an administrator banned it
+  status: number; // 1 when enabled and not banned
   created_at: string;
 }
 
@@ -32,7 +37,7 @@ export interface XuiPackage {
   package_name: string;
   official_credits: string;
   official_duration: string;
-  official_duration_in: string; // "months" | "days" | "hours"
+  official_duration_in: string; // "hours" | "days" | "months" | "years"
   max_connections: string;
   is_trial: string;
 }

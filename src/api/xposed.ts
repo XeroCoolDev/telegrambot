@@ -136,13 +136,9 @@ export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
       return c.json({ error: "Line not found" }, 404);
     }
 
-    const line = await xui.getLine(lineId);
-    if (!line) return c.json({ error: "Line not found" }, 404);
-
-    const reseller = await xui.getUser(line.member_id);
-    if (!reseller) return c.json({ error: "Failed to fetch reseller data" }, 502);
-
-    const success = await xui.toggleAdultContent(reseller.api_key, lineId, enable);
+    // The claim check above is the ownership test; the panel never hands out
+    // a reseller's API key, so the change is made with the admin key.
+    const success = await xui.toggleAdultContentAsAdmin(lineId, enable);
     if (!success) return c.json({ error: "Failed to update line" }, 500);
 
     return c.json({ success: true, adultEnabled: enable });

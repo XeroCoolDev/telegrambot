@@ -53,7 +53,7 @@ export function ownerLabel(owner: DbUser): string {
 }
 
 export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
-  // GET /subscriptions — live lines from xui.one
+  // GET /subscriptions — live lines from the panel
   api.get("/subscriptions", async (c) => {
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json([]);

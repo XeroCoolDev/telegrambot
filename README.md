@@ -1,6 +1,6 @@
-# Telegram Bot + Mini App — xui.one Manager
+# Telegram Bot + Mini App — XUI.live Engine Manager
 
-Telegram bot and mini app for managing xui.one IPTV subscriptions with BTCPay Bitcoin payments.
+Telegram bot and mini app for managing IPTV subscriptions on an [XUI.live Engine](https://xui.live/docs/api/) panel, with BTCPay Bitcoin payments.
 
 ## Features
 
@@ -175,6 +175,17 @@ cd /opt/saltbox_mod/roles/telegrambot && sudo git pull
 ## Configuration
 
 See `.env.example` for all available environment variables, and the [role README](https://github.com/XeroCoolDev/saltbox-telegrambot) for the inventory equivalents and their defaults.
+
+### Panel setup (XUI.live Engine)
+
+The bot talks to the panel's [Admin and Reseller APIs](https://xui.live/docs/api/). Both are reached through *access codes*, not fixed paths:
+
+1. In the Admin Console, **Security & Access → Access Codes → Add Code**. Create one of type **Admin API** (tick the Administrators group) and one of type **Reseller API** (tick every reseller group that will use the bot). Each answers at `https://<panel>/<code>/`. Those two URLs are `XUI_ADMIN_API_URL` and `XUI_RESELLER_API_URL`.
+2. **User Profile → API Access → Regenerate** on the administrator account the bot should act as. That 32-character key is `XUI_ADMIN_API_KEY`.
+3. Each reseller does the same in the Reseller Portal and gives you their key. The panel never returns keys over the API, so after `/link` an admin pastes it on the reseller's user page in the dashboard. Without it the reseller can see balances via the admin key but cannot buy, extend or edit lines.
+4. If you fill in **Allowed IP Addresses** on an access code, list the address the bot calls from. Leave it empty while testing.
+
+`XUI_ADULT_BOUQUET_IDS` are Engine bouquet ids (**Bouquets** in the console).
 
 ## Project Structure
 

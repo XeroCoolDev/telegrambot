@@ -45,7 +45,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
       )
       .all() as any[];
 
-    // Fold XUI credits in via a single get_users call. If XUI is unreachable,
+    // Fold panel credits in via one paged users.list. If the panel is unreachable,
     // the map stays empty and every row reports credits: null — the UI still
     // renders, just without the credit number.
     const xuiList = await xui.getAllUsers();
@@ -133,17 +133,20 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
       db.upsertUser.run(telegramId, null, null);
     }
 
-    // Store whatever api_key XUI has (may be empty — admin can paste it in
-    // later on the user page after generating in XUI).
-    db.linkXui.run(xuiUserId, xuiUser.api_key || null, xuiUser.username || null, telegramId);
+    // The panel never returns an account's API key, so a key already stored
+    // is kept and apiKeyPresent reflects that; otherwise the admin pastes the
+    // reseller's key on the user page once they generate it in their portal.
+    const apiKey = targetUser?.xui_api_key || null;
+    db.linkXui.run(xuiUserId, apiKey, xuiUser.username || null, telegramId);
     return c.json({
       success: true,
       username: xuiUser.username,
-      apiKeyPresent: !!xuiUser.api_key,
+      apiKeyPresent: !!apiKey,
     });
   });
 
-  // Admin: set/update api_key manually (after generating in the XUI panel)
+  // Admin: set/update api_key manually (the reseller generates it under
+  // API Access in their Reseller Portal profile; Engine keys are 32 hex chars)
   api.post("/admin/set-api-key", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId, apiKey } = await c.req.json<{ telegramId: number; apiKey: string }>();
@@ -166,7 +169,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     return c.json({ success: true });
   });
 
-  // Admin: remove a user from the bot entirely. Their xui.one account and its
+  // Admin: remove a user from the bot entirely. Their panel account and its
   // lines survive — see deleteUserCascade in db/index.ts.
   api.post("/admin/delete-user", async (c) => {
     const callerId = c.get("telegramId");

@@ -186,7 +186,7 @@ async function unlinkUser() {
 
 const deleting = ref(false);
 
-// Removes the user from the bot only — their xui.one account and its lines
+// Removes the user from the bot only — their panel account and its lines
 // are untouched, so they can be re-linked later.
 async function deleteUser() {
   if (!user.value || deleting.value) return;
@@ -194,7 +194,7 @@ async function deleteUser() {
     tg.showConfirm(
       `Delete ${userLabel.value} from the bot?\n\n` +
         `Their payment history here is removed and they lose access until re-linked. ` +
-        `Their xui.one account and all its lines are NOT touched.`,
+        `Their panel account and all its lines are NOT touched.`,
       (ok: boolean) => resolve(ok)
     );
   });
@@ -272,7 +272,7 @@ async function deleteUser() {
         </div>
         <div class="card-row" v-if="user.xui_user_id && editingApiKey">
           <span class="card-label">API Key</span>
-          <input v-model="apiKeyDraft" type="text" class="edit-inline" placeholder="Paste XUI api_key" />
+          <input v-model="apiKeyDraft" type="text" class="edit-inline" placeholder="Paste reseller API key (Reseller Portal → API Access)" />
         </div>
         <div class="card-row" v-if="editingApiKey" style="margin-top: 4px">
           <button class="btn-inline btn-inline-cancel" @click="editingApiKey = false" :disabled="savingApiKey">Cancel</button>
@@ -388,7 +388,7 @@ async function deleteUser() {
         {{ deleting ? "Deleting..." : "Delete User" }}
       </button>
       <div class="danger-note">
-        Removes this user from the bot. Their xui.one account and lines are left intact.
+        Removes this user from the bot. Their panel account and lines are left intact.
       </div>
     </template>
   </div>

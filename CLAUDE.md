@@ -1,4 +1,4 @@
-# Telegram Bot + Mini App — xui.one Manager
+# Telegram Bot + Mini App — XUI.live Engine Manager
 
 ## Stack
 - Server: Node.js + TypeScript, grammY (bot), Hono (API), better-sqlite3, node-cron
@@ -23,12 +23,15 @@
 - `/opt/telegrambot/data/bot.db` is bind-mounted and survives rebuilds; schema changes must stay additive and guarded, as in `src/db/index.ts`.
 
 ## Architecture
-- XUI API uses query-string `?action=X` format, NOT REST paths
-- Two XUI APIs: Admin (api.php) + Reseller (api-reseller.php)
+- Panel is XUI.live Engine (https://xui.live/docs/api/): POST JSON `{"action": "<resource>.<verb>", …}` with `X-API-Key` to an access-code URL (`https://panel/<code>/`), NOT REST paths and NOT xui.one's `api.php?action=`
+- Two panel APIs, one format: Admin (`XUI_ADMIN_API_URL`, an **Admin API** access code + admin key) and Reseller (`XUI_RESELLER_API_URL`, a **Reseller API** access code + each reseller's own key)
+- `src/services/xui/engine.ts` maps Engine objects onto the bot's older string-typed XuiLine/XuiUser/XuiPackage shapes; routes, bots and the scheduler never see Engine objects
+- The Engine never returns API keys: a reseller generates theirs in the Reseller Portal and an admin pastes it on the user page (`/admin/set-api-key`)
 - BTCPay credit packages come from a POS app, not XUI
 - User linking is admin-managed via /link command
-- All credits/packages/lines live in xui.one — SQLite only tracks tg↔xui mapping + invoices
-- Line extension uses hybrid flow: reseller API applies package, admin API sets expiry
+- All credits/packages/lines live in the panel — SQLite only tracks tg↔panel-account mapping + invoices
+- Line extension uses hybrid flow: reseller `lines.update` with `package_id` charges and applies the package, admin `lines.update` sets the calculated expiry + connections
+- Adult-bouquet toggles are made with the admin key: the Reseller API only accepts bouquets inside the line's package
 
 ## Code Style
 - ESM ("type": "module" in package.json)

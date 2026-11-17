@@ -1,23 +1,15 @@
 import type { XuiLine } from "./types.js";
 
-/** Normalise enabled state across get_lines (enabled field) and get_line (status field) */
+/** Enabled = the line's own switch on and no administrator ban (see engine.ts) */
 export function isLineEnabled(line: XuiLine): boolean {
   if (line.enabled !== undefined) return String(line.enabled) === "1" && String(line.admin_enabled) === "1";
   return line.status === 1;
 }
 
-/** Normalise exp_date to number (XUI returns string from get_lines, number from get_line) */
+/** Normalise exp_date to a unix timestamp; null/0/"" = never expires */
 export function normaliseExpDate(expDate: string | number | null): number | null {
   if (expDate === null || expDate === undefined || expDate === "" || expDate === "0" || expDate === 0) return null;
   return Number(expDate);
-}
-
-/** Format for XUI API (YYYY-MM-DD HH:MM:SS) */
-export function formatApiDate(timestamp: string | number | null): string {
-  const ts = normaliseExpDate(timestamp);
-  if (!ts) return "";
-  const d = new Date(ts * 1000);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
 }
 
 /** Display date only (e.g. "14 Apr 2026") */

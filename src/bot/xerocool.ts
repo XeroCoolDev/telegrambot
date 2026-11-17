@@ -120,7 +120,7 @@ export function createXerocoolBot(db: AppDb) {
     });
   });
 
-  // ── /link (admin only — link a telegram user to xui.one) ──
+  // ── /link (admin only — link a telegram user to a panel account) ──
   bot.command("link", async (ctx) => {
     if (!isAdmin(ctx.from!.id)) return;
 
@@ -144,10 +144,13 @@ export function createXerocoolBot(db: AppDb) {
       db.upsertUser.run(Number(telegramId), null, null);
     }
 
-    // Store whatever api_key XUI has; admin can update later via the user page
-    db.linkXui.run(xuiUserId, xuiUser.api_key || null, xuiUser.username || null, Number(telegramId));
+    // The panel never returns API keys: keep one already stored, otherwise the
+    // admin pastes the reseller's key on their user page in the dashboard.
+    const apiKey = targetUser?.xui_api_key || null;
+    db.linkXui.run(xuiUserId, apiKey, xuiUser.username || null, Number(telegramId));
     await ctx.reply(
-      `✅ Linked Telegram user ${telegramId} → XUI user ${xuiUser.username} (ID: ${xuiUserId})`
+      `✅ Linked Telegram user ${telegramId} → XUI user ${xuiUser.username} (ID: ${xuiUserId})` +
+        (apiKey ? "" : "\n\nNo reseller API key stored yet — add it on their user page in the dashboard.")
     );
   });
 

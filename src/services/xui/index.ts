@@ -1,11 +1,13 @@
 /**
- * XUI Admin & Reseller API client.
+ * XUI.live Engine Admin & Reseller API client.
  *
- * Admin API uses XUI_ADMIN_API_KEY for full access.
- * Reseller API uses each user's own api_key and is scoped to their lines.
+ * Admin API (XUI_ADMIN_API_URL + XUI_ADMIN_API_KEY) reaches the whole panel.
+ * Reseller API (XUI_RESELLER_API_URL + each reseller's own key) is scoped to
+ * that reseller's lines and charges their balance for purchases.
  *
- * Response format: { status: "STATUS_SUCCESS", data: {...} }
- * Exception: get_packages returns a raw array.
+ * Wire format: POST {"action": "<resource>.<verb>", ...} with X-API-Key;
+ * answers are {"status": "ok", "data": ...} or {"status": "error", "error": {code, message, field}}.
+ * See client.ts for the transport and engine.ts for the object mapping.
  */
 
 export * from "./types.js";

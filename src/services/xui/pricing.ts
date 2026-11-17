@@ -69,5 +69,5 @@ export async function upgradeConnections(
   lineId: string,
   newConnections: number
 ): Promise<boolean> {
-  return editLine(lineId, { max_connections: String(newConnections) });
+  return editLine(lineId, { max_connections: newConnections });
 }
