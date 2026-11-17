@@ -59,10 +59,15 @@ export async function getLinesForMembers(
         adminList<EngineLine>("lines.list", { owner_id, fields: LINE_LIST_FIELDS })
       )
     );
-    return perOwner
-      .flat()
-      .map(toXuiLine)
-      .sort((a, b) => Number(b.id) - Number(a.id));
+    // Belt and braces: never show a reseller a line that is not theirs, even
+    // if the server-side owner filter were ever ignored. Logged so it is seen.
+    const wanted = new Set(ids);
+    const rows = perOwner.flat();
+    const own = rows.filter((l) => wanted.has(Number(l.owner_id)));
+    if (own.length !== rows.length) {
+      console.error(`[xui] getLinesForMembers: dropped ${rows.length - own.length} line(s) whose owner_id was not in [${ids.join(",")}]`);
+    }
+    return own.map(toXuiLine).sort((a, b) => Number(b.id) - Number(a.id));
   } catch (e) {
     logFailure("getLinesForMembers", e);
     return null;
