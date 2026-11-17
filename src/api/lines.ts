@@ -176,6 +176,10 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
   api.post("/lines/extend", async (c) => {
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
+    // The purchase runs on the reseller's own key (it charges their balance).
+    // The panel never returns keys, so it has to be the one stored by an admin.
+    const xuiApiKey = c.get("xuiApiKey");
+    if (!xuiApiKey) return c.json({ error: "No reseller API key on your account — ask an admin to add it" }, 400);
 
     const { lineId, packageId } = await c.req.json<{
       lineId: string;
@@ -218,7 +222,11 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
       return c.json({ error: "Insufficient credits" }, 400);
     }
 
-    const success = await xui.extendLineHybrid(userData, lineData, selectedPackage);
+    const success = await xui.extendLineHybrid(
+      { ...userData, api_key: xuiApiKey },
+      lineData,
+      selectedPackage
+    );
     if (!success) return c.json({ error: "Failed to extend line" }, 500);
 
     return c.json({ success: true });
@@ -302,6 +310,9 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
 
     const xuiUserId = c.get("xuiUserId");
     if (!xuiUserId) return c.json({ error: "Account not linked" }, 400);
+    // Bought on the reseller's own key, which only an admin can have stored.
+    const xuiApiKey = c.get("xuiApiKey");
+    if (!xuiApiKey) return c.json({ error: "No reseller API key on your account — ask an admin to add it" }, 400);
 
     const { packageId, resellerNotes, contact } = await c.req.json<{
       packageId: string;
@@ -320,7 +331,7 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (userCredits < packageCost) return c.json({ error: "Insufficient credits" }, 400);
 
     const newLine = await xui.createNewLine(
-      userData.api_key,
+      xuiApiKey,
       packageId,
       resellerNotes || "",
       contact || ""
