@@ -3,14 +3,14 @@ import type { AppDb, DbUser } from "../db/index.js";
 import { parsePermissions } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 import { ADMIN_IDS, type AuthEnv } from "./auth.js";
-import { buildClaimByLine, ownerLabel, toLineSummary } from "./lines.js";
+import { buildLinesPage, ownerLabel } from "./lines.js";
 
 export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
-  // GET /admin/user/:telegramId/lines — one reseller's lines, annotated with
-  // their owner so the line page can label them. One panel call, on demand,
-  // from the user page: the old panel-wide list fanned out one call per linked
-  // reseller in a single request, which the panel console already does better
-  // and which a Worker invocation cannot afford.
+  // GET /admin/user/:telegramId/lines — one page of one reseller's lines,
+  // paged, filtered and sorted by the panel exactly like /subscriptions, plus
+  // owner attribution for the line page. The old panel-wide list fanned out
+  // one call per linked reseller and the full-list variant parsed every line
+  // of a reseller in one request — neither fits a Worker invocation.
   api.get("/admin/user/:telegramId/lines", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -20,19 +20,14 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const owner = await db.getUser.get(telegramId) as DbUser | undefined;
     if (!owner?.xui_user_id) return c.json({ error: "User not linked" }, 404);
 
-    const lines = await xui.getUserLines(owner.xui_user_id);
-    if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
-
-    const claimByLine = await buildClaimByLine(db);
-    return c.json(
-      lines.map((line) => ({
-        ...toLineSummary(line, claimByLine.get(line.id)),
-        ownerTelegramId: owner.telegram_id,
-        ownerName: ownerLabel(owner),
-        ownerXuiUsername: owner.xui_username ?? null,
-        ownerXuiUserId: String(owner.xui_user_id),
-      }))
-    );
+    const result = await buildLinesPage(db, owner.xui_user_id, c.req.query(), () => ({
+      ownerTelegramId: owner.telegram_id,
+      ownerName: ownerLabel(owner),
+      ownerXuiUsername: owner.xui_username ?? null,
+      ownerXuiUserId: String(owner.xui_user_id),
+    }));
+    if (!result) return c.json({ error: "Failed to fetch lines" }, 502);
+    return c.json({ ...result, owner: { telegramId: owner.telegram_id, label: ownerLabel(owner) } });
   });
 
   api.get("/admin/users", async (c) => {

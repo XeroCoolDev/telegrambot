@@ -122,8 +122,9 @@ pnpm exec wrangler secret put X   # secrets
   admin summary names how many resellers were skipped, so overflow is visible
   rather than silent. Below ~40 resellers with reminders due on the same day
   nothing is skipped; past that, raise the budget on the $5/month plan (1000
-  requests, 30 s CPU). The admin area lists one reseller's lines at a time (one panel
-  call), so no request fans out across resellers any more. D1 free tier (5 GB, 5M
+  requests, 30 s CPU). Line lists are paged by the panel (20 per page, `meta.total` for the
+  pager and tiles), so a 4,000-line reseller costs the same per request as a
+  40-line one; the full-list version of that screen exceeded the 10 ms CPU cap. D1 free tier (5 GB, 5M
   row reads/day) is far beyond this bot's needs.
 - **Cron is UTC.** `0 9 * * *` is 09:00 GMT / 10:00 BST. Dates in reminders and
   `daysUntilExpiry`'s midnight boundary are UTC too; the Docker build used

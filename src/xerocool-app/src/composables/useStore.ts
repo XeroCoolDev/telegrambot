@@ -1,17 +1,21 @@
 import { ref } from "vue";
-import { api, type UserInfo, type Subscription, type XuiPackage } from "./useApi";
+import { api, type UserInfo, type XuiPackage } from "./useApi";
 
 const user = ref<UserInfo | null>(null);
-const subs = ref<Subscription[] | null>(null);
 const packages = ref<XuiPackage[] | null>(null);
 
 const userLoading = ref(false);
-const subsLoading = ref(false);
 const packagesLoading = ref(false);
 
 const userLoaded = ref(false);
-const subsLoaded = ref(false);
 const packagesLoaded = ref(false);
+
+/**
+ * Bumped whenever a line changed (extend, create, toggle, delete). The
+ * Dashboard fetches its lines one page at a time from the panel and watches
+ * this to refetch; nothing caches the list any more.
+ */
+const linesVersion = ref(0);
 
 async function loadUser() {
   if (userLoaded.value) return;
@@ -21,17 +25,6 @@ async function loadUser() {
     userLoaded.value = true;
   } finally {
     userLoading.value = false;
-  }
-}
-
-async function loadSubs() {
-  if (subsLoaded.value) return;
-  subsLoading.value = true;
-  try {
-    subs.value = await api.getSubscriptions();
-    subsLoaded.value = true;
-  } finally {
-    subsLoading.value = false;
   }
 }
 
@@ -46,10 +39,9 @@ async function loadPackages() {
   }
 }
 
-/** Invalidate subs so next access re-fetches (after extend/create/toggle) */
+/** A line changed: any open line list should refetch its current page. */
 function invalidateSubs() {
-  subsLoaded.value = false;
-  subs.value = null;
+  linesVersion.value++;
 }
 
 /** Invalidate user so next access re-fetches (after credit change) */
@@ -61,13 +53,11 @@ function invalidateUser() {
 export function useStore() {
   return {
     user,
-    subs,
     packages,
     userLoading,
-    subsLoading,
     packagesLoading,
+    linesVersion,
     loadUser,
-    loadSubs,
     loadPackages,
     invalidateSubs,
     invalidateUser,

@@ -52,17 +52,111 @@ export function ownerLabel(owner: DbUser): string {
   return owner.username || owner.first_name || owner.xui_username || String(owner.telegram_id);
 }
 
+/** Sort options the apps offer, mapped onto the Engine's sort keys. */
+const LINE_SORTS: Record<string, { sort: "id" | "username" | "expires_at"; order: "asc" | "desc" }> = {
+  newest: { sort: "id", order: "desc" },
+  "expiry-asc": { sort: "expires_at", order: "asc" },
+  "expiry-desc": { sort: "expires_at", order: "desc" },
+  name: { sort: "username", order: "asc" },
+};
+
+export interface LinesPage {
+  lines: Record<string, unknown>[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+  /** Per-status totals for the stats tiles; only when `counts=1` was asked for. */
+  counts?: Record<xui.LineListStatus, number | null>;
+}
+
+/**
+ * One page of an owner's lines as the apps render them. The panel does the
+ * filtering (`status`), searching (`q`), sorting (`sort`) and paging
+ * (`page`, `perPage` ≤ 100), so this handles at most 100 rows however many
+ * the owner has — the Worker runtime meters CPU per request, and a 4,000-line
+ * reseller must cost the same as a 40-line one. `counts=1` adds the four
+ * per-status totals (one tiny panel call each) for the stats tiles.
+ *
+ * Null means the panel could not be reached.
+ */
+export async function buildLinesPage(
+  db: AppDb,
+  ownerXuiId: string,
+  query: Record<string, string | undefined>,
+  decorate: (line: xui.XuiLine) => Record<string, unknown> = () => ({})
+): Promise<LinesPage | null> {
+  const perPage = Math.min(100, Math.max(1, Number(query.perPage) || 20));
+  let page = Math.max(1, Number(query.page) || 1);
+  const status = (xui.LINE_LIST_STATUSES as readonly string[]).includes(query.status || "")
+    ? (query.status as xui.LineListStatus)
+    : null;
+  const search = (query.q || "").trim().slice(0, 100);
+  const sortSpec = LINE_SORTS[query.sort || "newest"] ?? LINE_SORTS.newest;
+  const withCounts = query.counts === "1";
+
+  const fetchPage = (p: number) =>
+    xui.listOwnerLinesPage({
+      ownerId: ownerXuiId,
+      status,
+      search,
+      ...sortSpec,
+      start: (p - 1) * perPage,
+      limit: perPage,
+    });
+
+  // Kick off the page and the four counters together, await them separately
+  // so each keeps its own type.
+  const pagePromise = fetchPage(page);
+  const countPromises = withCounts
+    ? xui.LINE_LIST_STATUSES.map((s) => xui.countOwnerLines(ownerXuiId, s))
+    : [];
+  const pageRes = await pagePromise;
+  const counts = await Promise.all(countPromises);
+  if (!pageRes) return null;
+
+  // Past the end (a line was deleted, a filter narrowed the set): serve the
+  // real last page rather than an empty one that strands the pager.
+  let result = pageRes;
+  const totalPages = Math.max(1, Math.ceil(result.total / perPage));
+  if (page > totalPages) {
+    page = totalPages;
+    const again = await fetchPage(page);
+    if (!again) return null;
+    result = again;
+  }
+
+  const claimByLine = await buildClaimByLine(db);
+  return {
+    lines: result.lines.map((line) => ({ ...toLineSummary(line, claimByLine.get(line.id)), ...decorate(line) })),
+    total: result.total,
+    page,
+    perPage,
+    totalPages,
+    counts: withCounts
+      ? {
+          active: counts[0] ?? null,
+          expiring: counts[1] ?? null,
+          expired: counts[2] ?? null,
+          disabled: counts[3] ?? null,
+        }
+      : undefined,
+  };
+}
+
 export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
-  // GET /subscriptions — live lines from the panel
+  // GET /subscriptions — one page of the caller's lines, filtered, searched,
+  // sorted and paged by the panel (see buildLinesPage). Query: status, q,
+  // sort, page, perPage, counts=1.
   api.get("/subscriptions", async (c) => {
     const xuiUserId = c.get("xuiUserId");
-    if (!xuiUserId) return c.json([]);
+    if (!xuiUserId) {
+      return c.json({ lines: [], total: 0, page: 1, perPage: 20, totalPages: 1 } satisfies LinesPage);
+    }
 
-    const lines = await xui.getUserLines(xuiUserId);
-    if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
-
-    const claimByLine = await buildClaimByLine(db);
-    return c.json(lines.map((line) => toLineSummary(line, claimByLine.get(line.id))));
+    const result = await buildLinesPage(db, xuiUserId, c.req.query());
+    if (!result) return c.json({ error: "Failed to fetch lines" }, 502);
+    return c.json(result);
   });
 
   // GET /line/:id — single line details

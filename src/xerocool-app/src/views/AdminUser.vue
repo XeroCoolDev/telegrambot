@@ -149,6 +149,7 @@ function openAllPayments() {
 
 // ── Lines: the first few; the full list with filters is the Dashboard in admin mode ──
 const lines = ref<AdminLine[] | null>(null);
+const linesTotal = ref(0);
 const linesLoading = ref(false);
 const linesError = ref<string | null>(null);
 const LINES_PREVIEW = 5;
@@ -158,7 +159,9 @@ async function loadLines() {
   linesLoading.value = true;
   linesError.value = null;
   try {
-    lines.value = await api.adminGetUserLines(user.value.telegram_id);
+    const res = await api.adminGetUserLines(user.value.telegram_id, { perPage: LINES_PREVIEW });
+    lines.value = res.lines;
+    linesTotal.value = res.total;
   } catch (e: any) {
     linesError.value = e.message || "Failed to load lines";
   } finally {
@@ -169,7 +172,7 @@ watch(user, (u) => {
   if (u?.xui_user_id && lines.value === null) loadLines();
 }, { immediate: true });
 
-const visibleLines = computed(() => (lines.value ?? []).slice(0, LINES_PREVIEW));
+const visibleLines = computed(() => lines.value ?? []);
 
 function openAllLines() {
   tg.HapticFeedback.selectionChanged();
@@ -363,8 +366,8 @@ async function deleteUser() {
       <!-- Lines: this reseller only, one panel call -->
       <template v-if="user.xui_user_id">
         <div class="section-header" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: baseline">
-          <span>Lines<template v-if="lines"> ({{ lines.length }})</template></span>
-          <button v-if="lines && lines.length > LINES_PREVIEW" class="btn-edit" @click="openAllLines">
+          <span>Lines<template v-if="lines"> ({{ linesTotal }})</template></span>
+          <button v-if="lines && linesTotal > LINES_PREVIEW" class="btn-edit" @click="openAllLines">
             View all
           </button>
         </div>

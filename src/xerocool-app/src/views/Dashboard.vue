@@ -7,12 +7,22 @@ import { computed, ref, onActivated, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Check, Copy, FileText, Link2Off, Satellite, SearchX } from "lucide-vue-next";
 import { useStore } from "../composables/useStore";
-import { api, type AdminLine } from "../composables/useApi";
+import {
+  api,
+  type LineSort,
+  type LineStatusFilter,
+  type LinesPage,
+  type Subscription,
+} from "../composables/useApi";
 
 /**
  * Without `ownerId` this is the reseller's own dashboard. With it (route
  * /admin/user/:ownerId/lines) it shows that reseller's lines to an admin:
  * same stats, filters, search, sort and paging, minus credits and actions.
+ *
+ * The list is fetched one page at a time and the panel does the filtering,
+ * searching and sorting. The app never holds more than one page, so a
+ * reseller with thousands of lines costs the same as one with a handful.
  */
 const props = defineProps<{ ownerId?: string }>();
 const adminMode = computed(() => !!props.ownerId);
@@ -20,85 +30,107 @@ const adminMode = computed(() => !!props.ownerId);
 const router = useRouter();
 const tg = window.Telegram.WebApp;
 
-const { user, subs, userLoading, subsLoading, loadUser, loadSubs } = useStore();
+const { user, userLoading, linesVersion, loadUser } = useStore();
 loadUser();
-if (!adminMode.value) loadSubs();
 
-// ── Admin mode: one reseller's lines, one panel call ──
-const ownerLines = ref<AdminLine[] | null>(null);
-const ownerLoading = ref(false);
-const ownerError = ref<string | null>(null);
+// ── Query state ──
+const PER_PAGE = 20;
+const search = ref("");
+const page = ref(1);
+const statusFilter = ref<LineStatusFilter | null>(null);
+const sortBy = ref<LineSort>("newest");
 
-async function loadOwnerLines() {
-  if (!props.ownerId || ownerLoading.value) return;
-  ownerLoading.value = true;
-  ownerError.value = null;
+// Search is sent to the panel, so wait for the typing to pause
+const debouncedSearch = ref("");
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+watch(search, (q) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { debouncedSearch.value = q.trim(); }, 300);
+});
+
+// ── Result state ──
+const result = ref<LinesPage | null>(null);
+const counts = ref<Record<LineStatusFilter, number | null> | null>(null);
+const linesLoading = ref(false);
+const error = ref<string | null>(null);
+let requestSeq = 0;
+
+async function fetchLines(refreshCounts = false) {
+  const seq = ++requestSeq;
+  linesLoading.value = true;
+  error.value = null;
+  const query = {
+    status: statusFilter.value,
+    q: debouncedSearch.value,
+    sort: sortBy.value,
+    page: page.value,
+    perPage: PER_PAGE,
+    counts: refreshCounts || !counts.value,
+  };
   try {
-    ownerLines.value = await api.adminGetUserLines(Number(props.ownerId));
+    const res = adminMode.value
+      ? await api.adminGetUserLines(Number(props.ownerId), query)
+      : await api.getSubscriptions(query);
+    if (seq !== requestSeq) return; // a newer request has superseded this one
+    result.value = res;
+    if (res.counts) counts.value = res.counts;
+    // The API clamps the page to the real range; follow it so the pager
+    // doesn't sit on a number that no longer exists.
+    page.value = res.page;
   } catch (e: any) {
-    ownerError.value = e.message || "Failed to load lines";
+    if (seq !== requestSeq) return;
+    error.value = e.message || "Failed to load lines";
   } finally {
-    ownerLoading.value = false;
+    if (seq === requestSeq) linesLoading.value = false;
   }
 }
 
-const ownerLabel = computed(() => {
-  const first = ownerLines.value?.[0];
-  return first?.ownerName || first?.ownerXuiUsername || (props.ownerId ? `reseller ${props.ownerId}` : "");
+// Filters and sorting start from page 1; paging just fetches
+watch([statusFilter, sortBy, debouncedSearch], () => {
+  page.value = 1;
+  fetchLines();
 });
+watch(page, (p, old) => {
+  if (p !== old) fetchLines();
+});
+// A line changed elsewhere (extend, create, toggle, delete): refetch, counts too
+watch(linesVersion, () => fetchLines(true));
 
-const loading = computed(() =>
-  adminMode.value
-    ? userLoading.value || (ownerLoading.value && !ownerLines.value)
-    : userLoading.value || subsLoading.value
-);
-
-const search = ref("");
-const page = ref(1);
-const perPage = 20;
-const statusFilter = ref<"active" | "expiring" | "expired" | "disabled" | null>(null);
-
-// Re-fetch when returning to this page (keep-alive reactivation)
+// First load, and (keep-alive) every return to this page
+let activatedOnce = false;
 onActivated(() => {
   loadUser();
-  if (adminMode.value) loadOwnerLines();
-  else loadSubs();
+  // onActivated fires on first mount as well; the initial fetch below covers that
+  if (activatedOnce) fetchLines(true);
+  activatedOnce = true;
 });
+fetchLines(true);
 
-// Admin mode: (re)load when the owner changes and start from clean filters
-watch(
-  () => props.ownerId,
-  (id) => {
-    if (!id) return;
-    search.value = "";
-    statusFilter.value = null;
-    page.value = 1;
-    loadOwnerLines();
-  },
-  { immediate: true }
-);
+const lines = computed<Subscription[]>(() => result.value?.lines ?? []);
+const total = computed(() => result.value?.total ?? 0);
+const totalPages = computed(() => result.value?.totalPages ?? 1);
+const ownerLabel = computed(() => result.value?.owner?.label || (props.ownerId ? `reseller ${props.ownerId}` : ""));
+const filtering = computed(() => !!statusFilter.value || !!debouncedSearch.value);
 
-/** The list the page works from, before any filtering. */
-const allLines = computed<any[]>(
-  () => ((adminMode.value ? ownerLines.value : subs.value) as any[] | null) ?? []
-);
+/** Per-status totals for the tiles, from the panel's own counters. */
+const stats = computed(() => ({
+  active: counts.value?.active ?? 0,
+  expiring: counts.value?.expiring ?? 0,
+  expired: counts.value?.expired ?? 0,
+  disabled: counts.value?.disabled ?? 0,
+}));
 
-// ── Sorting ──
-type SortKey = "newest" | "expiry-asc" | "expiry-desc" | "name";
-const sortBy = ref<SortKey>("newest");
-watch(sortBy, () => { page.value = 1; });
+/** The first-load skeleton only; refetches dim the list instead. */
+const loading = computed(() => userLoading.value || (!result.value && !error.value && linesLoading.value));
 
-/** Unlimited lines sort as "never expires", i.e. after everything dated. */
-function expiryKey(s: any): number {
-  return s.expDate === null ? Number.POSITIVE_INFINITY : s.expDate;
+function toggleFilter(filter: LineStatusFilter) {
+  statusFilter.value = statusFilter.value === filter ? null : filter;
+  tg.HapticFeedback.selectionChanged();
 }
 
-/** Subtraction would yield NaN for two unlimited lines, so compare instead. */
-function compareExpiry(a: any, b: any): number {
-  const ka = expiryKey(a);
-  const kb = expiryKey(b);
-  if (ka === kb) return 0;
-  return ka < kb ? -1 : 1;
+function setPage(p: number) {
+  page.value = Math.max(1, Math.min(p, totalPages.value));
+  tg.HapticFeedback.selectionChanged();
 }
 
 /**
@@ -107,6 +139,9 @@ function compareExpiry(a: any, b: any): number {
  * carry one, which is what makes them stand out.
  */
 const EXPIRY_HORIZON_DAYS = 60;
+
+/** Matches the panel's `expiring` filter, so the tile and the rail agree. */
+const EXPIRING_DAYS = 14;
 
 /**
  * The top-right slot: a countdown only when it's actionable, "Disabled" for
@@ -146,78 +181,12 @@ function closeNotes() {
   notesLine.value = null;
 }
 
-function getLineStatus(s: any): "active" | "expiring" | "expired" | "disabled" {
+function getLineStatus(s: any): LineStatusFilter {
   if (s.status === "disabled") return "disabled";
   // Line has expired only if its timestamp is actually in the past
   if (s.expDate !== null && s.expDate * 1000 < Date.now()) return "expired";
-  if (s.daysLeft !== null && s.daysLeft <= 3) return "expiring";
+  if (s.daysLeft !== null && s.daysLeft <= EXPIRING_DAYS) return "expiring";
   return "active";
-}
-
-function toggleFilter(filter: "active" | "expiring" | "expired" | "disabled") {
-  statusFilter.value = statusFilter.value === filter ? null : filter;
-  page.value = 1;
-  tg.HapticFeedback.selectionChanged();
-}
-
-const filtered = computed(() => {
-  let result = allLines.value;
-
-  if (statusFilter.value) {
-    result = result.filter((s) => getLineStatus(s) === statusFilter.value);
-  }
-
-  const q = search.value.toLowerCase().trim();
-  if (q) {
-    const qBare = q.startsWith("@") ? q.slice(1) : q;
-    result = result.filter(
-      (s: any) =>
-        s.username?.toLowerCase().includes(q) ||
-        s.id?.toString().includes(q) ||
-        s.resellerNotes?.toLowerCase().includes(q) ||
-        s.customerUsername?.toLowerCase().includes(qBare) ||
-        s.customerTelegramId?.toString().includes(qBare)
-    );
-  }
-
-  return result;
-});
-
-const stats = computed(() => {
-  let active = 0, expiring = 0, expired = 0, disabled = 0;
-  for (const s of allLines.value) {
-    const st = getLineStatus(s);
-    if (st === "disabled") disabled++;
-    else if (st === "expired") expired++;
-    else if (st === "expiring") expiring++;
-    else active++;
-  }
-  return { active, expiring, expired, disabled, total: allLines.value.length };
-});
-
-const sorted = computed(() => {
-  const list = [...filtered.value];
-  switch (sortBy.value) {
-    case "expiry-asc":
-      return list.sort(compareExpiry);
-    case "expiry-desc":
-      return list.sort((a, b) => compareExpiry(b, a));
-    case "name":
-      return list.sort((a, b) => String(a.username).localeCompare(String(b.username)));
-    default:
-      return list; // API order — newest line id first
-  }
-});
-
-const totalPages = computed(() => Math.max(1, Math.ceil(sorted.value.length / perPage)));
-const paginated = computed(() => {
-  const start = (page.value - 1) * perPage;
-  return sorted.value.slice(start, start + perPage);
-});
-
-function setPage(p: number) {
-  page.value = Math.max(1, Math.min(p, totalPages.value));
-  tg.HapticFeedback.selectionChanged();
 }
 
 /** Same buckets as the status dot, but as text colour rather than background. */
@@ -349,17 +318,16 @@ function tapLine(id: string) {
       <!-- Subscriptions -->
       <div class="section-header" style="display: flex; justify-content: space-between; align-items: center">
         <span>Lines</span>
-        <span style="font-size: 13px; font-weight: 400; color: var(--tg-hint)">{{ filtered.length }} of {{ allLines.length }}</span>
+        <span style="font-size: 13px; font-weight: 400; color: var(--tg-hint)">{{ total }} line{{ total !== 1 ? "s" : "" }}<template v-if="filtering"> match</template></span>
       </div>
 
-      <!-- Search + sort -->
-      <div v-if="allLines.length > 0" class="list-controls">
+      <!-- Search + sort — kept visible while filtering so a filter can be cleared -->
+      <div v-if="total > 0 || filtering" class="list-controls">
         <input
           v-model="search"
           type="search"
           placeholder="Search lines..."
           class="search-input"
-          @input="page = 1"
           @click.stop
         />
         <select v-model="sortBy" class="sort-select" @click.stop>
@@ -370,29 +338,29 @@ function tapLine(id: string) {
         </select>
       </div>
 
-      <div v-if="adminMode && ownerError" class="empty-state">
+      <div v-if="error" class="empty-state">
         <SearchX class="icon-svg" />
-        <p>{{ ownerError }}</p>
+        <p>{{ error }}</p>
       </div>
 
-      <div v-else-if="allLines.length === 0" class="empty-state">
+      <div v-else-if="!linesLoading && lines.length === 0 && !filtering" class="empty-state">
         <Satellite class="icon-svg" />
         <p v-if="adminMode">This reseller has no lines.</p>
         <p v-else-if="!user.linked">No reseller account linked.<br />Open Admin to manage resellers and see their lines.</p>
         <p v-else>No active lines found.</p>
       </div>
 
-      <div v-else-if="filtered.length === 0" class="empty-state">
+      <div v-else-if="!linesLoading && lines.length === 0" class="empty-state">
         <SearchX class="icon-svg" />
         <p v-if="search">No lines match "{{ search }}"</p>
         <p v-else>No lines match the current filter.</p>
       </div>
 
       <div
-        v-for="sub in paginated"
+        v-for="sub in lines"
         :key="sub.id"
         class="card line-card"
-        :class="railClass(sub)"
+        :class="[railClass(sub), { 'list-busy': linesLoading }]"
         @click="tapLine(sub.id)"
       >
         <div class="line-head">
@@ -453,6 +421,7 @@ function tapLine(id: string) {
 </template>
 
 <style scoped>
+.list-busy { opacity: 0.5; transition: opacity 0.15s; }
 .list-controls {
   display: flex;
   gap: 8px;

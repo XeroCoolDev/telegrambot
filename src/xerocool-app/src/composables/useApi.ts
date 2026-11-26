@@ -96,6 +96,44 @@ export interface AdminLine extends Subscription {
   ownerXuiUserId: string;
 }
 
+export type LineStatusFilter = "active" | "expiring" | "expired" | "disabled";
+export type LineSort = "newest" | "expiry-asc" | "expiry-desc" | "name";
+
+/** What the line list endpoints accept; the panel applies all of it. */
+export interface LinesQuery {
+  status?: LineStatusFilter | null;
+  q?: string;
+  sort?: LineSort;
+  page?: number;
+  perPage?: number;
+  /** Ask for the per-status totals too (four extra tiny panel calls). */
+  counts?: boolean;
+}
+
+/** One page of lines plus what the pager and the stats tiles need. */
+export interface LinesPage<T extends Subscription = Subscription> {
+  lines: T[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+  counts?: Record<LineStatusFilter, number | null>;
+  /** Present on the admin per-reseller endpoint. */
+  owner?: { telegramId: number; label: string } | null;
+}
+
+function linesQueryString(q: LinesQuery): string {
+  const p = new URLSearchParams();
+  if (q.status) p.set("status", q.status);
+  if (q.q) p.set("q", q.q);
+  if (q.sort) p.set("sort", q.sort);
+  if (q.page) p.set("page", String(q.page));
+  if (q.perPage) p.set("perPage", String(q.perPage));
+  if (q.counts) p.set("counts", "1");
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
 export interface XuiPackage {
   id: string;
   name: string;
@@ -121,7 +159,7 @@ export interface CreditOptions {
 export const api = {
   getMe: () => request<UserInfo>("/me"),
 
-  getSubscriptions: () => request<Subscription[]>("/subscriptions"),
+  getSubscriptions: (q: LinesQuery = {}) => request<LinesPage>(`/subscriptions${linesQueryString(q)}`),
 
   getLine: (id: string) => request<Subscription>(`/line/${id}`),
 
@@ -202,7 +240,8 @@ export const api = {
   // Admin
   adminGetUsers: () => request<any[]>("/admin/users"),
 
-  adminGetUserLines: (telegramId: number) => request<AdminLine[]>(`/admin/user/${telegramId}/lines`),
+  adminGetUserLines: (telegramId: number, q: LinesQuery = {}) =>
+    request<LinesPage<AdminLine>>(`/admin/user/${telegramId}/lines${linesQueryString(q)}`),
 
   adminGetUserPayments: (telegramId: number, page = 1, perPage = 10) =>
     request<AdminUserPayments>(

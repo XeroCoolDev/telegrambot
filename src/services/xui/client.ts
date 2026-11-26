@@ -113,6 +113,25 @@ export async function engineCall<T>(
 }
 
 /**
+ * One page of a `*.list` action together with `meta.total`, the count of
+ * every row matching the filters — what a paged UI needs to draw its pager
+ * and its counters without ever fetching the whole set.
+ */
+export async function adminCallWithTotal<T>(
+  action: string,
+  params: EngineParams = {}
+): Promise<{ data: T; total: number | null }> {
+  const body = await engineRequest<T>(
+    process.env.XUI_ADMIN_API_URL,
+    process.env.XUI_ADMIN_API_KEY || "",
+    action,
+    params
+  );
+  const total = Number(body.meta?.total);
+  return { data: body.data as T, total: Number.isFinite(total) ? total : null };
+}
+
+/**
  * A `*.list` action, walking every page. `meta.total` counts every matching
  * row, so we raise `start` by the page size until we have them all.
  */
