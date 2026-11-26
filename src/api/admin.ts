@@ -92,7 +92,10 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
 
     const payments = await db.getUserPaymentsPage.all(telegramId, perPage, (page - 1) * perPage);
 
+    const owner = await db.getUser.get(telegramId) as DbUser | undefined;
+
     return c.json({
+      owner: owner ? { telegramId: owner.telegram_id, label: ownerLabel(owner) } : null,
       payments,
       total: summary.total,
       settledCredits: summary.settledCredits,

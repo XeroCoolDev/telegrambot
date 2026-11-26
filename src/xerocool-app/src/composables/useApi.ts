@@ -79,6 +79,7 @@ export interface AdminPayment {
 
 /** One page of a single user's payment ledger. */
 export interface AdminUserPayments {
+  owner: { telegramId: number; label: string } | null;
   payments: AdminPayment[];
   total: number;
   settledCredits: number;
