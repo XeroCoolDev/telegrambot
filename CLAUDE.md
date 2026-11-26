@@ -3,26 +3,27 @@
 ## Stack
 - Server: Node.js + TypeScript, grammY (bot), Hono (API), better-sqlite3, node-cron
 - Mini Apps: Vue 3 + Vite SPAs — `src/xerocool-app/` (reseller) and `src/xposed-app/` (customer)
-- Deployment: Docker on Saltbox behind Traefik
-- Alternative build: Cloudflare Workers (D1 + webhooks + Cron Trigger) from `worker/` — see `worker/README.md`
+- Deployment: Cloudflare Workers (D1 + webhooks + Cron Trigger), deployed from `worker/` — see `worker/README.md`
+- Alternative build: Docker (Node + SQLite + long polling) via `Dockerfile`/`compose.yaml`; kept building, not deployed anywhere
 
 ## Commands
 - `pnpm dev` — run server with tsx watch
 - `cd src/xerocool-app && pnpm dev` — run XeroCool (reseller) mini-app dev server
 - `cd src/xposed-app && pnpm dev` — run Xposed (customer) mini-app dev server
 - `pnpm build` — compile server TypeScript (`tsc --strict`; excludes both mini-apps)
-- `sb install mod-telegrambot` — deploy on Saltbox
-- `cd worker && pnpm typecheck && pnpm deploy` — type-check against Workers types and deploy the Workers build
+- `cd worker && pnpm exec wrangler deploy` — redeploy Worker code only, when no mini-app changed
+- `cd worker && pnpm typecheck && pnpm deploy` — type-check against Workers types, rebuild both mini-apps and deploy (production)
 
 ## Deployment
-- Deploys run from `/opt/telegrambot/repo`, which the Ansible role **hard-resets to `origin/main`** (`git` module, `force: true`). Always `git push origin main` before deploying — unpushed commits and uncommitted edits are destroyed.
-- Only `main` ships; a feature branch needs `telegrambot_docker_build_branch` overridden in the inventory.
-- Mini-apps build with plain `vite build` and are **not** type-checked. Use `pnpm exec vue-tsc --noEmit` inside `src/xerocool-app` / `src/xposed-app` to check them.
-- The role deletes the running container **before** building the image, so a failed build takes the bot down. Pre-flight with `docker build -t telegrambot:preflight .` before deploying.
-- pnpm is pinned via `packageManager` in all three `package.json` files. Bumping it means changing all three *and* regenerating all three lockfiles (`pnpm install --lockfile-only`) in the same commit.
-- Build stages use a bare `pnpm install --frozen-lockfile` with no fallback. A failure there means the lockfile is stale — regenerate it, don't work around it.
-- Env vars come from the Saltbox inventory (`telegrambot_docker_envs_custom`), not `.env` — that's local dev only.
-- `/opt/telegrambot/data/bot.db` is bind-mounted and survives rebuilds; schema changes must stay additive and guarded, as in `src/db/index.ts`.
+- Production is the Worker `telegrambot` on Cloudflare (free plan: 10 ms CPU and 50 subrequests per invocation, 100k requests/day). Deploys run from the developer's clone with `wrangler` logged in to the account that owns the bot's zone; nothing deploys from the server any more.
+- Secrets (`*_TOKEN`, `*_API_KEY`, `*_SECRET`, `SETUP_KEY`) go through `wrangler secret put`, never into `[vars]` in `wrangler.toml`.
+- After a deploy that changed the webhook URL or menu buttons, `POST /setup/telegram` with header `X-Setup-Key` re-registers them; an ordinary code deploy needs nothing.
+- Mini-apps build with plain `vite build` and are **not** type-checked. Use `pnpm exec vue-tsc --noEmit` inside `src/xerocool-app` / `src/xposed-app` to check them (124 pre-existing errors from `useAsync` typing; new errors are the ones to care about).
+- `pnpm build` at the root type-checks the Node entrypoint; `cd worker && pnpm typecheck` checks the Worker one. Run both before pushing — they share `src/`.
+- pnpm is pinned via `packageManager` in all three `package.json` files. Bumping it means changing all three *and* regenerating all three lockfiles (`pnpm install --lockfile-only`) in the same commit. `worker/` is its own pnpm root (`worker/pnpm-workspace.yaml`) with its own lockfile.
+- Docker build stages use a bare `pnpm install --frozen-lockfile` with no fallback. A failure there means the lockfile is stale — regenerate it, don't work around it.
+- D1 schema changes are numbered files in `worker/migrations/` applied with `pnpm migrate`; the Node build applies the same change additively in `src/db/sqlite.ts`. Keep both.
+- `*.sql` is git-ignored except `worker/migrations/`: a data export (`worker/export-sqlite.sh`) contains reseller API keys and must never be committed.
 
 ## Architecture
 - Line lists are paged BY THE PANEL: `/subscriptions` and `/admin/user/:id/lines` pass `status`, `q`, `sort`, `page`, `perPage` (≤100) to `lines.list` and return one page plus `meta.total` (`api/lines.ts` buildLinesPage). Never fetch a reseller's whole line list in one request — Workers meter CPU per request and a 4,000-line reseller blew the free plan's 10 ms

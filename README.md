@@ -25,7 +25,7 @@ Telegram bot and mini app for managing IPTV subscriptions on an [XUI.live Engine
 - **Server**: Node.js + TypeScript, grammY, Hono, better-sqlite3, node-cron
 - **Mini App**: Vue 3 + Vite SPA
 - **Payments**: BTCPay Server
-- **Deployment**: Docker on Saltbox behind Traefik
+- **Deployment**: Cloudflare Workers (D1, webhooks, Cron Trigger); Docker build kept as a self-hosted alternative
 
 ## Local Development
 
@@ -57,76 +57,47 @@ Set the ngrok URL as `XEROCOOL_WEBAPP_URL` in `.env` and in BotFather's Menu But
 
 Two builds share this source tree:
 
-- **Docker on Saltbox** (below) — the production path on `main`.
-- **Cloudflare Workers** — the same bot on D1 + webhooks + a Cron Trigger, deployed from [`worker/`](worker/README.md). Separate tooling and lockfile; the Docker build never sees it.
-
-## Deployment (Saltbox)
-
-Deployed by the [saltbox-telegrambot](https://github.com/XeroCoolDev/saltbox-telegrambot) Ansible role, installed as a `saltbox_mod`. See that repo for first-time setup (bootstrapping the role, registering it in the playbook, inventory config).
-
-Once installed, one command deploys:
-
-```bash
-sb install mod-telegrambot
-```
-
-That command, in order:
-
-1. Creates/updates the Cloudflare DNS records for both subdomains
-2. Removes the running `telegrambot` container
-3. **Clones or force-resets `/opt/telegrambot/repo` to `origin/main`**
-4. Builds the Docker image from that checkout
-5. Recreates the container behind Traefik
-
-### Push before you deploy
-
-Step 3 runs Ansible's `git` module with `force: true` and `version: main`. It hard-resets the working tree to `origin/main`, so **anything that hasn't reached GitHub is destroyed** — uncommitted edits *and* local commits that only exist on the server.
-
-`/opt/telegrambot/repo` is a real git clone, so editing in place is fine. Just never deploy before pushing.
-
-Deploys always track `main`. A feature branch won't ship unless you override `telegrambot_docker_build_branch` in the inventory.
+- **Cloudflare Workers** — production. The bot, API, mini-apps and daily job run as one Worker on D1 + Telegram webhooks + a Cron Trigger, deployed from [`worker/`](worker/README.md) with `pnpm deploy`. That README is the runbook: first deploy, cutover, rollback, limits.
+- **Docker** (`Dockerfile`, `compose.yaml`) — the same code on Node + SQLite + long polling, for anyone who wants to self-host. It is kept building but is not deployed anywhere at the moment.
 
 ### Making a change
 
 ```bash
-cd /opt/telegrambot/repo
+# 1. Edit in your clone
 
-# 1. Edit
+# 2. Type-check both entrypoints — they share src/
+pnpm install && pnpm build          # Node build, tsc --strict
+cd worker && pnpm install && pnpm typecheck && cd ..
 
-# 2. Typecheck (optional, needs Node 22 + pnpm on the host).
-#    The server is compiled with `tsc --strict`, so a type error here
-#    becomes a failed image build halfway through the deploy.
-pnpm install && pnpm build
-
-# 3. Pre-flight the image build. The role deletes the running container
-#    BEFORE it builds, so a build failure leaves the bot down. Catching it
-#    here costs two minutes; catching it during a deploy costs an outage.
-docker build -t telegrambot:preflight .
-
-# 4. Commit and push — REQUIRED before deploying, see above
-git add -A src
+# 3. Commit and push
+git add -A
 git commit -m "feat: ..."
 git push origin main
 
-# 5. Deploy
-sb install mod-telegrambot
+# 4. Deploy
+cd worker
+pnpm deploy                         # rebuilds both mini-apps, then wrangler deploy
+# or, when only Worker/server code changed:
+pnpm exec wrangler deploy
 ```
+
+`wrangler` must be logged in to the Cloudflare account that owns the bot's zone (`pnpm exec wrangler whoami`). An exported `CLOUDFLARE_API_TOKEN` overrides that login and causes "Unable to authenticate request [code: 10001]" when it belongs to another account.
 
 ### Dependencies and pnpm
 
 pnpm is pinned by the `packageManager` field in all three `package.json` files
 and fetched by corepack at build time. The Dockerfile sets
 `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` so a non-TTY build can download it without
-prompting.
+prompting. `worker/` is its own pnpm root (`worker/pnpm-workspace.yaml`) with its
+own lockfile, so installing wrangler there never touches the root lockfile.
 
-All four build stages use a bare `pnpm install --frozen-lockfile`. There is
+All Docker build stages use a bare `pnpm install --frozen-lockfile`. There is
 deliberately **no `|| pnpm install` fallback** — that fallback silently
 re-resolved every dependency whenever the lockfile didn't match, which made
-builds non-reproducible and hid the mismatch. If a frozen install now fails,
+builds non-reproducible and hid the mismatch. If a frozen install fails,
 the lockfile is genuinely out of date and needs regenerating:
 
 ```bash
-cd /opt/telegrambot/repo
 pnpm install --lockfile-only
 (cd src/xerocool-app && pnpm install --lockfile-only)
 (cd src/xposed-app   && pnpm install --lockfile-only)
@@ -153,35 +124,32 @@ cd src/xposed-app   && pnpm exec vue-tsc --noEmit
 ### Verifying a deploy
 
 ```bash
-docker logs -f telegrambot          # expect: [db], [bot], [api], [scheduler] lines
+cd worker && pnpm tail              # live request log; every line should end "Ok"
 curl -s https://<xerocool-subdomain>.<domain>/health
 ```
 
 Then open the mini app from Telegram. Mini apps are aggressively cached — if you don't see your change, fully close and reopen the app rather than just backing out of it.
 
-### What survives a rebuild
+### What survives a deploy
 
-The SQLite database at `/opt/telegrambot/data/bot.db` is bind-mounted and untouched by rebuilds. Schema changes are applied on boot by the migration block in `src/db/index.ts`, which is additive (`ALTER TABLE ... ADD COLUMN` guarded by a `PRAGMA table_info` check) — so a redeploy never drops data.
+All state lives in the D1 database. Schema changes are numbered SQL files in `worker/migrations/`, applied with `pnpm migrate`; a code deploy never touches data. The Node build keeps the equivalent additive migration in `src/db/sqlite.ts` so the two schemas stay in step.
 
 ### Changing configuration
 
-Environment variables come from the Saltbox inventory, not from `.env` (that file is for local dev only):
+Non-secret settings are `[vars]` in `worker/wrangler.toml` and ship with the next deploy. Secrets are set once with `pnpm exec wrangler secret put <NAME>` and persist across deploys. `.env` is for local development only.
+
+### Running the Docker build instead
 
 ```bash
-sb edit inventory
+cp .env.example .env                # fill in values
+docker compose up -d --build        # bot on :3000, SQLite in /opt/telegrambot/data (see compose.yaml)
 ```
 
-Edit `telegrambot_docker_envs_custom`, then re-run `sb install mod-telegrambot`.
-
-### Updating the Ansible role
-
-```bash
-cd /opt/saltbox_mod/roles/telegrambot && sudo git pull
-```
+Polling and webhooks are mutually exclusive: before starting the Docker build against a bot token that the Worker serves, call `deleteWebhook` for that bot or Telegram answers 409.
 
 ## Configuration
 
-See `.env.example` for all available environment variables, and the [role README](https://github.com/XeroCoolDev/saltbox-telegrambot) for the inventory equivalents and their defaults.
+See `.env.example` for all available environment variables; the Worker reads the same names from `[vars]` and secrets.
 
 ### Panel setup (XUI.live Engine)
 

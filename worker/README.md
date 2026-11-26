@@ -1,22 +1,22 @@
 # Cloudflare Workers build
 
-The same bot, API, mini-apps and daily job as the Docker build, deployed to
-Cloudflare Workers so it keeps running when the Saltbox host does not (weekly
+The production build. The bot, API, mini-apps and daily job run as one
+Cloudflare Worker so they keep running when the media server does not (weekly
 backup stop, reboots, link trouble). The panel and BTCPay are hosted elsewhere,
 so nothing in the bot needs the home network.
 
-This is a **separate build**, not a replacement: `main` still ships through
-`sb install mod-telegrambot`. The two share `src/` and differ only in their
-entrypoint and tooling:
+The Docker build (`Dockerfile`, `compose.yaml` at the repo root) is kept as a
+self-hosted alternative and is not deployed anywhere. The two share `src/` and
+differ only in their entrypoint and tooling:
 
 | | Docker (`src/index.ts`) | Workers (`src/worker.ts`) |
 |---|---|---|
-| storage | better-sqlite3, `/opt/telegrambot/data/bot.db` | D1 binding `BOT_DB` |
+| storage | better-sqlite3, `/opt/telegrambot/data/bot.db` (compose bind mount) | D1 binding `BOT_DB` |
 | Telegram updates | long polling | webhooks at `/telegram/xerocool`, `/telegram/xposed` |
 | daily job | node-cron, `REMINDER_CRON` in container TZ | Cron Trigger in `wrangler.toml`, **UTC** |
 | mini-apps | served from `./dist` by Hono | assets binding, `public/app-<bot>/`, routed by host |
-| config | Saltbox inventory → container env | `[vars]` in `wrangler.toml` + `wrangler secret` |
-| deploy | push, `sb install` | `pnpm deploy` from this directory |
+| config | `.env` → container env | `[vars]` in `wrangler.toml` + `wrangler secret` |
+| deploy | `docker compose up -d --build` | `pnpm deploy` from this directory |
 
 Everything under `src/` is runtime-neutral: every database call is `await`ed
 through one statement map (`src/db/statements.ts`) and env is read on use, not
@@ -29,9 +29,9 @@ storage adapters (`src/db/sqlite.ts`, `src/db/d1.ts`), `src/scheduler/index.ts`
 - Node 22 and pnpm (the root `packageManager` pin), `pnpm install` run at the
   repo root — the Worker bundle resolves `grammy` and `hono` from there. The
   root lockfile is untouched by this build.
-- A Cloudflare account with the bot's zone on it (Saltbox already manages the
-  DNS there). `pnpm exec wrangler login` once.
-- `sqlite3` on the Saltbox host for the one-off data export.
+- A Cloudflare account with the bot's zone on it (`pnpm exec wrangler login`
+  once, approving with that account).
+- `sqlite3` on the old Docker host for the one-off data export when migrating.
 
 ## First deploy
 
@@ -50,7 +50,7 @@ done
 openssl rand -hex 32 | pnpm exec wrangler secret put TELEGRAM_WEBHOOK_SECRET   # grammY checks it on every update
 openssl rand -hex 32 | pnpm exec wrangler secret put SETUP_KEY                 # guards POST /setup/telegram
 
-# 3. Data (on the Saltbox host; stop the container first if this is the cutover)
+# 3. Data (on the old Docker host; stop the container first if this is the cutover)
 ./export-sqlite.sh /opt/telegrambot/data/bot.db > data.sql
 pnpm exec wrangler d1 execute BOT_DB --remote --file=data.sql
 
@@ -65,7 +65,7 @@ Telegram delivers updates either by polling or by webhook, never both, so the
 Docker bot has to stop before the Worker takes the bots over.
 
 ```bash
-# on the Saltbox host
+# on the old Docker host
 docker stop telegrambot
 
 # register webhooks + default menu buttons (idempotent, run after every deploy that changes URLs)
