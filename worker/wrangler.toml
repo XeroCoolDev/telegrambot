@@ -7,6 +7,7 @@ compatibility_date = "2025-10-01"
 # and process.env for the shared code.
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
+preview_urls = false
 
 # One hostname per mini-app, both on this Worker. Custom domains need the zone
 # on Cloudflare (Saltbox already manages DNS there). Commented out for the trial:
@@ -45,20 +46,20 @@ crons = ["0 9 * * *"]
 # Non-secret configuration. Same names as the Docker build's env.
 # Secrets are NOT here — see README.md ("Secrets").
 [vars]
-XEROCOOL_WEBAPP_URL = "https://xerocool-bot.example.com"
+XEROCOOL_WEBAPP_URL = "https://telegrambot.peter-morello.workers.dev"
 XPOSED_WEBAPP_URL = "https://xposed-bot.example.com"
-XEROCOOL_ADMIN_TELEGRAM_IDS = ""
-XEROCOOL_ADMIN_CHAT_ID = ""
+XEROCOOL_ADMIN_TELEGRAM_IDS = "428588578"
+XEROCOOL_ADMIN_CHAT_ID = "-1003922039130"
 XPOSED_SUPPORT_CHAT_ID = ""
 XPOSED_AUTHORISED_TELEGRAM_IDS = ""
 
-XUI_ADMIN_API_URL = "https://your-panel.com/your-admin-access-code"
-XUI_RESELLER_API_URL = "https://your-panel.com/your-reseller-access-code"
+XUI_ADMIN_API_URL = "https://panel.solidcheese.com/vtRGOTrk"
+XUI_RESELLER_API_URL = "https://panel.solidcheese.com/qkzwFWOM"
 XUI_ADULT_BOUQUET_IDS = ""
 
-BTCPAY_URL = "https://your-btcpay.com"
-BTCPAY_STORE_ID = ""
-BTCPAY_POS_APP_ID = ""
+BTCPAY_URL = "https://btcpay168201.lndyn.com"
+BTCPAY_STORE_ID = "6TnocvFQCa7kPWv3Zme3wYf2Qo7cjrNfQ1bpuToiU8hP"
+BTCPAY_POS_APP_ID = "Kb18wpWZxYMQZeVYNEfXRwXkde6"
 
 API_TIMEOUT_MS = "10000"
 REMINDER_DAYS = "0,1,3"

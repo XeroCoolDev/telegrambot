@@ -56,7 +56,7 @@ export function createXerocoolBot(db: AppDb) {
 
     const user = await db.getUser.get(tgUser.id) as DbUser | undefined;
 
-    if (!user?.xui_user_id) {
+    if (!user?.xui_user_id && !isAdmin(tgUser.id)) {
       await setDashboardButton(tgUser.id, false);
       await ctx.reply(
         `Your Telegram User ID is: \`${tgUser.id}\`\n\n` +
