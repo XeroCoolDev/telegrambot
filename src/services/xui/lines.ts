@@ -1,7 +1,7 @@
 import type { XuiLine, XuiUser, XuiPackage } from "./types.js";
 import type { EngineLine } from "./engine.js";
 import { toXuiLine } from "./engine.js";
-import { adminCall, adminList, resellerCall, toId, logFailure, type EngineParams } from "./client.js";
+import { adminCall, adminCallWithTotal, adminList, resellerCall, toId, logFailure, type EngineParams } from "./client.js";
 import { normaliseExpDate } from "./format.js";
 
 /** Admin API — get any line by id */
@@ -273,4 +273,81 @@ export async function getExpiringLines(): Promise<XuiLine[] | null> {
     logFailure("getExpiringLines", e);
     return null;
   }
+}
+
+/** The Engine's own `status` filter values for `lines.list`. */
+export const LINE_LIST_STATUSES = ["active", "expiring", "expired", "disabled"] as const;
+export type LineListStatus = (typeof LINE_LIST_STATUSES)[number];
+
+export interface OwnerLinesPageQuery {
+  ownerId: string | number;
+  /** Engine filter: `expiring` means within the next 14 days. */
+  status?: LineListStatus | null;
+  /** Engine `search`: username, password, expiry date, connections, notes. */
+  search?: string;
+  sort?: "id" | "username" | "expires_at";
+  order?: "asc" | "desc";
+  start: number;
+  limit: number;
+}
+
+/**
+ * Admin API — ONE page of one owner's lines, filtered, searched and sorted
+ * by the panel. This is what the dashboards use: a reseller with 4,000 lines
+ * costs the same as one with 40, because the Worker only ever parses and
+ * returns `limit` rows. `total` counts every matching row, for the pager.
+ *
+ * If the panel rejects the sort (an unknown key), the page is fetched again
+ * unsorted rather than failing: a list in the wrong order beats no list.
+ */
+export async function listOwnerLinesPage(
+  q: OwnerLinesPageQuery
+): Promise<{ lines: XuiLine[]; total: number } | null> {
+  const owner_id = toId(q.ownerId);
+  if (!owner_id) return null;
+
+  const params: EngineParams = {
+    owner_id,
+    start: Math.max(0, q.start),
+    limit: Math.min(1000, Math.max(1, q.limit)),
+    fields: LINE_LIST_FIELDS,
+  };
+  if (q.status) params.status = q.status;
+  if (q.search) params.search = q.search;
+  if (q.sort) {
+    params.sort = q.sort;
+    params.order = q.order ?? "asc";
+  }
+
+  try {
+    let res: { data: EngineLine[]; total: number | null };
+    try {
+      res = await adminCallWithTotal<EngineLine[]>("lines.list", params);
+    } catch (e) {
+      if (!q.sort) throw e;
+      logFailure("listOwnerLinesPage (sorted; retrying unsorted)", e);
+      const { sort: _s, order: _o, ...unsorted } = params;
+      res = await adminCallWithTotal<EngineLine[]>("lines.list", unsorted);
+    }
+    const rows = Array.isArray(res.data) ? res.data : [];
+    // Belt and braces, as in getLinesForMembers: never hand out a line that
+    // is not this owner's even if the server-side filter were ever ignored.
+    const own = rows.filter((l) => Number(l.owner_id) === owner_id);
+    if (own.length !== rows.length) {
+      console.error(`[xui] listOwnerLinesPage: dropped ${rows.length - own.length} line(s) not owned by ${owner_id}`);
+    }
+    return { lines: own.map(toXuiLine), total: res.total ?? own.length };
+  } catch (e) {
+    logFailure("listOwnerLinesPage", e);
+    return null;
+  }
+}
+
+/** How many of an owner's lines match a status — one call, one row, `meta.total`. */
+export async function countOwnerLines(
+  ownerId: string | number,
+  status: LineListStatus
+): Promise<number | null> {
+  const page = await listOwnerLinesPage({ ownerId, status, start: 0, limit: 1 });
+  return page ? page.total : null;
 }
