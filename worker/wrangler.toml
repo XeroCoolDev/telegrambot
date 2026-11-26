@@ -8,6 +8,15 @@ compatibility_date = "2025-10-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+# One hostname per mini-app, both on this Worker. Custom domains need the zone
+# on Cloudflare (Saltbox already manages DNS there). Commented out for the trial:
+# the Worker then lives on workers.dev, where only the XeroCool app is reachable,
+# because the Xposed app is chosen by hostname.
+# routes = [
+#   { pattern = "xerocool-bot.example.com", custom_domain = true },
+#   { pattern = "xposed-bot.example.com", custom_domain = true },
+# ]
+
 # Both mini-apps, built by ./build-assets.sh into public/app-xerocool and
 # public/app-xposed. The Worker picks one by hostname and does the SPA
 # fallback itself, so the platform must not redirect or rewrite paths.
@@ -23,8 +32,8 @@ not_found_handling = "none"
 # and paste the id it prints here.
 [[d1_databases]]
 binding = "BOT_DB"
-database_name = "telegrambot"
-database_id = "REPLACE-WITH-DATABASE-ID"
+database_name = "telegrambot-test"
+database_id = "a60b54db-3080-405f-9a95-5588ac3d7df8"
 migrations_dir = "migrations"
 
 # Daily job (expiry + top-up reminders). Cron Triggers run in UTC — the Docker
@@ -32,15 +41,6 @@ migrations_dir = "migrations"
 # is 09:00 UTC in winter and 08:00 UTC in summer.
 [triggers]
 crons = ["0 9 * * *"]
-
-# One hostname per mini-app, both on this Worker. Custom domains need the zone
-# on Cloudflare (it already is: Saltbox manages DNS there). For a trial without
-# DNS changes, comment these out and use the workers.dev URL — only the
-# XeroCool app is reachable that way, because the Xposed app is chosen by host.
-routes = [
-  { pattern = "xerocool-bot.example.com", custom_domain = true },
-  { pattern = "xposed-bot.example.com", custom_domain = true },
-]
 
 # Non-secret configuration. Same names as the Docker build's env.
 # Secrets are NOT here — see README.md ("Secrets").
