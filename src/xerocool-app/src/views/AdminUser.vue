@@ -190,7 +190,7 @@ function lineStatus(l: AdminLine): "active" | "expiring" | "expired" | "disabled
 
 function openLine(id: string) {
   tg.HapticFeedback.selectionChanged();
-  router.push(`/line/`);
+  router.push(`/line/${id}`);
 }
 
 function formatStamp(str: string | null | undefined): string {
