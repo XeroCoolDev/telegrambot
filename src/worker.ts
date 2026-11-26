@@ -146,6 +146,12 @@ async function serveAsset(request: Request, assets: AssetsBinding): Promise<Resp
 
   const res = await assets.fetch(assetReq(path));
   if (res.status !== 404) return res;
+
+  // SPA fallback is for app routes like /admin or /line/123. A missing path
+  // that names a file (favicon.ico, a stale hashed bundle) is a real 404 —
+  // handing it index.html made browsers treat a web page as an icon.
+  const lastSegment = url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+  if (lastSegment.includes(".")) return new Response("Not found", { status: 404 });
   return assets.fetch(assetReq("/index.html"));
 }
 
