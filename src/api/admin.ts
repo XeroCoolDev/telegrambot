@@ -6,34 +6,32 @@ import { ADMIN_IDS, type AuthEnv } from "./auth.js";
 import { buildClaimByLine, ownerLabel, toLineSummary } from "./lines.js";
 
 export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
-  // GET /admin/lines — every line belonging to a linked reseller, annotated
-  // with its owner. Scoped to members the bot knows about rather than the
-  // whole panel, which carries 12k+ lines.
-  api.get("/admin/lines", async (c) => {
+  // GET /admin/user/:telegramId/lines — one reseller's lines, annotated with
+  // their owner so the line page can label them. One panel call, on demand,
+  // from the user page: the old panel-wide list fanned out one call per linked
+  // reseller in a single request, which the panel console already does better
+  // and which a Worker invocation cannot afford.
+  api.get("/admin/user/:telegramId/lines", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
 
-    const owners = await db.getAllLinkedUsers.all() as DbUser[];
-    const ownerByMemberId = new Map<string, DbUser>();
-    for (const o of owners) {
-      if (o.xui_user_id) ownerByMemberId.set(String(o.xui_user_id), o);
-    }
+    const telegramId = Number(c.req.param("telegramId"));
+    if (!Number.isInteger(telegramId)) return c.json({ error: "Invalid telegram id" }, 400);
 
-    const lines = await xui.getLinesForMembers([...ownerByMemberId.keys()]);
+    const owner = await db.getUser.get(telegramId) as DbUser | undefined;
+    if (!owner?.xui_user_id) return c.json({ error: "User not linked" }, 404);
+
+    const lines = await xui.getUserLines(owner.xui_user_id);
     if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
 
     const claimByLine = await buildClaimByLine(db);
-
     return c.json(
-      lines.map((line) => {
-        const owner = ownerByMemberId.get(String(line.member_id));
-        return {
-          ...toLineSummary(line, claimByLine.get(line.id)),
-          ownerTelegramId: owner?.telegram_id ?? null,
-          ownerName: owner ? ownerLabel(owner) : null,
-          ownerXuiUsername: owner?.xui_username ?? null,
-          ownerXuiUserId: String(line.member_id),
-        };
-      })
+      lines.map((line) => ({
+        ...toLineSummary(line, claimByLine.get(line.id)),
+        ownerTelegramId: owner.telegram_id,
+        ownerName: ownerLabel(owner),
+        ownerXuiUsername: owner.xui_username ?? null,
+        ownerXuiUserId: String(owner.xui_user_id),
+      }))
     );
   });
 

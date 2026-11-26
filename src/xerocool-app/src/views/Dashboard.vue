@@ -11,18 +11,7 @@ import { useStore } from "../composables/useStore";
 const router = useRouter();
 const tg = window.Telegram.WebApp;
 
-const {
-  user,
-  subs,
-  allSubs,
-  userLoading,
-  subsLoading,
-  allSubsLoading,
-  allSubsError,
-  loadUser,
-  loadSubs,
-  loadAllSubs,
-} = useStore();
+const { user, subs, userLoading, subsLoading, loadUser, loadSubs } = useStore();
 loadUser();
 loadSubs();
 
@@ -33,74 +22,14 @@ const page = ref(1);
 const perPage = 20;
 const statusFilter = ref<"active" | "expiring" | "expired" | "disabled" | null>(null);
 
-// ── Admin scope: own lines vs every linked reseller's lines ──
-const scope = ref<"mine" | "all">("mine");
-const ownerFilter = ref<string | null>(null);
-
-function setScope(next: "mine" | "all") {
-  if (scope.value === next) return;
-  scope.value = next;
-  ownerFilter.value = null;
-  page.value = 1;
-  tg.HapticFeedback.selectionChanged();
-  if (next === "all") loadAllSubs();
-}
-
-// Reset paging whenever the owner filter moves
-watch(ownerFilter, () => { page.value = 1; });
-
-// An admin with no reseller account of their own has no "my lines" to show,
-// so drop them straight into the all-lines view — that's their whole dashboard.
-watch(
-  user,
-  (u) => {
-    if (u?.isAdmin && !u.linked && scope.value !== "all") {
-      scope.value = "all";
-      loadAllSubs();
-    }
-  },
-  { immediate: true }
-);
-
 // Re-fetch when returning to this page (keep-alive reactivation)
 onActivated(() => {
   loadUser();
   loadSubs();
-  if (scope.value === "all") loadAllSubs();
 });
 
-/** The list the page is currently working from, before any filtering. */
-const scopedSubs = computed<any[] | null>(() =>
-  scope.value === "all" ? (allSubs.value as any[] | null) : (subs.value as any[] | null)
-);
-
-/** Distinct owners in the all-lines set, for the filter dropdown. */
-const owners = computed(() => {
-  if (scope.value !== "all" || !allSubs.value) return [];
-  const byId = new Map<string, { id: string; label: string; count: number }>();
-  for (const s of allSubs.value as any[]) {
-    const id = String(s.ownerXuiUserId);
-    const existing = byId.get(id);
-    if (existing) {
-      existing.count++;
-    } else {
-      byId.set(id, {
-        id,
-        label: s.ownerName || s.ownerXuiUsername || `XUI member ${id}`,
-        count: 1,
-      });
-    }
-  }
-  return [...byId.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-});
-
-/** Owner filter applied — stats and the list both work from here. */
-const ownerScoped = computed<any[]>(() => {
-  const list = scopedSubs.value;
-  if (!list) return [];
-  if (scope.value !== "all" || !ownerFilter.value) return list;
-  return list.filter((s) => String(s.ownerXuiUserId) === ownerFilter.value);
-});
+/** The list the page works from, before any filtering. */
+const allLines = computed<any[]>(() => (subs.value as any[] | null) ?? []);
 
 // ── Sorting ──
 type SortKey = "newest" | "expiry-asc" | "expiry-desc" | "name";
@@ -180,7 +109,7 @@ function toggleFilter(filter: "active" | "expiring" | "expired" | "disabled") {
 }
 
 const filtered = computed(() => {
-  let result = ownerScoped.value;
+  let result = allLines.value;
 
   if (statusFilter.value) {
     result = result.filter((s) => getLineStatus(s) === statusFilter.value);
@@ -195,9 +124,7 @@ const filtered = computed(() => {
         s.id?.toString().includes(q) ||
         s.resellerNotes?.toLowerCase().includes(q) ||
         s.customerUsername?.toLowerCase().includes(qBare) ||
-        s.customerTelegramId?.toString().includes(qBare) ||
-        s.ownerName?.toLowerCase().includes(qBare) ||
-        s.ownerXuiUsername?.toLowerCase().includes(qBare)
+        s.customerTelegramId?.toString().includes(qBare)
     );
   }
 
@@ -206,14 +133,14 @@ const filtered = computed(() => {
 
 const stats = computed(() => {
   let active = 0, expiring = 0, expired = 0, disabled = 0;
-  for (const s of ownerScoped.value) {
+  for (const s of allLines.value) {
     const st = getLineStatus(s);
     if (st === "disabled") disabled++;
     else if (st === "expired") expired++;
     else if (st === "expiring") expiring++;
     else active++;
   }
-  return { active, expiring, expired, disabled, total: ownerScoped.value.length };
+  return { active, expiring, expired, disabled, total: allLines.value.length };
 });
 
 const sorted = computed(() => {
@@ -367,28 +294,11 @@ function tapLine(id: string) {
       <!-- Subscriptions -->
       <div class="section-header" style="display: flex; justify-content: space-between; align-items: center">
         <span>Lines</span>
-        <span style="font-size: 13px; font-weight: 400; color: var(--tg-hint)">{{ filtered.length }} of {{ ownerScoped.length }}</span>
+        <span style="font-size: 13px; font-weight: 400; color: var(--tg-hint)">{{ filtered.length }} of {{ allLines.length }}</span>
       </div>
-
-      <!-- Admin scope toggle — nothing to switch to when there's no own account -->
-      <div v-if="user.isAdmin && user.linked" class="scope-toggle">
-        <button class="scope-btn" :class="{ active: scope === 'mine' }" @click="setScope('mine')">My lines</button>
-        <button class="scope-btn" :class="{ active: scope === 'all' }" @click="setScope('all')">All lines</button>
-      </div>
-
-      <!-- Owner filter (all-lines mode) -->
-      <select
-        v-if="scope === 'all' && owners.length > 0"
-        v-model="ownerFilter"
-        class="owner-select"
-        @click.stop
-      >
-        <option :value="null">All resellers ({{ scopedSubs?.length || 0 }})</option>
-        <option v-for="o in owners" :key="o.id" :value="o.id">{{ o.label }} ({{ o.count }})</option>
-      </select>
 
       <!-- Search + sort -->
-      <div v-if="scopedSubs && scopedSubs.length > 0" class="list-controls">
+      <div v-if="subs && subs.length > 0" class="list-controls">
         <input
           v-model="search"
           type="search"
@@ -405,18 +315,10 @@ function tapLine(id: string) {
         </select>
       </div>
 
-      <div v-if="scope === 'all' && allSubsError" class="empty-state">
-        <SearchX class="icon-svg" />
-        <p>{{ allSubsError }}</p>
-      </div>
-
-      <div v-else-if="scope === 'all' && allSubsLoading && !allSubs" class="empty-state">
-        <p>Loading all lines...</p>
-      </div>
-
-      <div v-else-if="!scopedSubs || scopedSubs.length === 0" class="empty-state">
+      <div v-if="!subs || subs.length === 0" class="empty-state">
         <Satellite class="icon-svg" />
-        <p>No active lines found.</p>
+        <p v-if="!user.linked">No reseller account linked.<br />Open Admin to manage resellers and see their lines.</p>
+        <p v-else>No active lines found.</p>
       </div>
 
       <div v-else-if="filtered.length === 0" class="empty-state">
@@ -463,9 +365,6 @@ function tapLine(id: string) {
             </button>
           </div>
         </div>
-        <div v-if="scope === 'all'" class="owner-tag">
-          {{ sub.ownerName || sub.ownerXuiUsername || `XUI member ${sub.ownerXuiUserId}` }}
-        </div>
       </div>
 
       <!-- Pagination -->
@@ -493,52 +392,6 @@ function tapLine(id: string) {
 </template>
 
 <style scoped>
-.scope-toggle {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-  background: var(--tg-secondary-bg);
-  border-radius: 10px;
-  padding: 3px;
-}
-.scope-btn {
-  flex: 1;
-  padding: 8px;
-  border: none;
-  background: none;
-  color: var(--tg-hint);
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.scope-btn.active {
-  background: var(--tg-btn);
-  color: var(--tg-btn-text);
-}
-.owner-select {
-  width: 100%;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  border: 1px solid var(--tg-hint);
-  border-radius: 10px;
-  background: var(--tg-secondary-bg);
-  color: var(--tg-text);
-  font-size: 14px;
-  outline: none;
-  box-sizing: border-box;
-}
-.owner-select:focus {
-  border-color: var(--tg-link);
-}
-.owner-tag {
-  font-size: 12px;
-  color: var(--tg-link);
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .list-controls {
   display: flex;
   gap: 8px;

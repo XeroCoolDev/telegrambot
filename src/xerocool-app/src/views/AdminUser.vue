@@ -2,7 +2,7 @@
 import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { HelpCircle, Eye, EyeOff } from "lucide-vue-next";
-import { api, useAsync, type AdminUserPayments, type Permissions } from "../composables/useApi";
+import { api, useAsync, type AdminLine, type AdminUserPayments, type Permissions } from "../composables/useApi";
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
@@ -152,6 +152,45 @@ function setPaymentsPage(p: number) {
   paymentsPage.value = next;
   tg.HapticFeedback.selectionChanged();
   loadPayments();
+}
+
+// ── Lines (one panel call, loaded once the user row shows they are linked) ──
+const lines = ref<AdminLine[] | null>(null);
+const linesLoading = ref(false);
+const linesError = ref<string | null>(null);
+const showAllLines = ref(false);
+const LINES_PREVIEW = 5;
+
+async function loadLines() {
+  if (!user.value?.xui_user_id || linesLoading.value) return;
+  linesLoading.value = true;
+  linesError.value = null;
+  try {
+    lines.value = await api.adminGetUserLines(user.value.telegram_id);
+  } catch (e: any) {
+    linesError.value = e.message || "Failed to load lines";
+  } finally {
+    linesLoading.value = false;
+  }
+}
+watch(user, (u) => {
+  if (u?.xui_user_id && lines.value === null) loadLines();
+}, { immediate: true });
+
+const visibleLines = computed(() =>
+  showAllLines.value ? lines.value ?? [] : (lines.value ?? []).slice(0, LINES_PREVIEW)
+);
+
+function lineStatus(l: AdminLine): "active" | "expiring" | "expired" | "disabled" {
+  if (l.status === "disabled") return "disabled";
+  if (l.expDate !== null && l.expDate * 1000 < Date.now()) return "expired";
+  if (l.daysLeft !== null && l.daysLeft <= 3) return "expiring";
+  return "active";
+}
+
+function openLine(id: string) {
+  tg.HapticFeedback.selectionChanged();
+  router.push(`/line/`);
 }
 
 function formatStamp(str: string | null | undefined): string {
@@ -326,6 +365,44 @@ async function deleteUser() {
         </div>
       </div>
 
+      <!-- Lines: this reseller only, one panel call -->
+      <template v-if="user.xui_user_id">
+        <div class="section-header" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: baseline">
+          <span>Lines<template v-if="lines"> ({{ lines.length }})</template></span>
+          <button v-if="lines && lines.length > LINES_PREVIEW" class="btn-edit" @click="showAllLines = !showAllLines">
+            {{ showAllLines ? "Show fewer" : "Show all" }}
+          </button>
+        </div>
+
+        <div v-if="linesError" class="card">
+          <div class="card-row">
+            <span class="card-value" style="font-size: 13px">{{ linesError }}</span>
+            <button class="btn-edit" @click="loadLines">Retry</button>
+          </div>
+        </div>
+        <div v-else-if="!lines && linesLoading" class="card">
+          <div class="card-row"><span class="card-value" style="font-size: 13px">Loading...</span></div>
+        </div>
+        <div v-else-if="lines && lines.length === 0" class="card">
+          <div class="card-row">
+            <span class="card-value" style="font-size: 13px; color: var(--tg-hint)">No lines on this account.</span>
+          </div>
+        </div>
+        <template v-else-if="lines">
+          <div v-for="l in visibleLines" :key="l.id" class="card line-row" @click="openLine(l.id)">
+            <div class="card-row">
+              <div style="min-width: 0; flex: 1">
+                <div style="font-weight: 600; font-size: 14px">{{ l.username }}</div>
+                <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
+                  {{ l.expiresFormatted }} · {{ l.maxConnections }} conn<template v-if="l.customerLabel"> · {{ l.customerLabel }}</template>
+                </div>
+              </div>
+              <span class="line-status" :class="lineStatus(l)">{{ lineStatus(l) }}</span>
+            </div>
+          </div>
+        </template>
+      </template>
+
       <!-- Payments -->
       <div class="section-header" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: baseline">
         <span>Payments<template v-if="payments"> ({{ payments.total }})</template></span>
@@ -395,6 +472,19 @@ async function deleteUser() {
 </template>
 
 <style scoped>
+.line-row { cursor: pointer; }
+.line-status {
+  flex-shrink: 0;
+  margin-left: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.line-status.active { color: #34c759; }
+.line-status.expiring { color: #ff9f0a; }
+.line-status.expired { color: #ff3b30; }
+.line-status.disabled { color: var(--tg-hint); }
 .perm-item {
   align-items: flex-start;
   padding: 14px 16px;

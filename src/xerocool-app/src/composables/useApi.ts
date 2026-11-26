@@ -87,7 +87,7 @@ export interface AdminUserPayments {
   totalPages: number;
 }
 
-/** A line from /admin/lines — always carries owner attribution. */
+/** A line from /admin/user/:id/lines — always carries owner attribution. */
 export interface AdminLine extends Subscription {
   ownerTelegramId: number | null;
   ownerName: string | null;
@@ -201,7 +201,7 @@ export const api = {
   // Admin
   adminGetUsers: () => request<any[]>("/admin/users"),
 
-  adminGetLines: () => request<AdminLine[]>("/admin/lines"),
+  adminGetUserLines: (telegramId: number) => request<AdminLine[]>(`/admin/user/${telegramId}/lines`),
 
   adminGetUserPayments: (telegramId: number, page = 1, perPage = 10) =>
     request<AdminUserPayments>(
