@@ -113,12 +113,19 @@ pnpm exec wrangler secret put X   # secrets
 
 ## Limits and behaviour differences
 
-- **Free plan:** 100k requests/day, 10 ms CPU per invocation, 50 subrequests
-  per invocation. The daily job makes ~2 calls per linked reseller (panel
-  `lines.list` + `sendMessage`) plus the admin summary, so above roughly 20
-  linked resellers it will hit the subrequest cap and log errors for the rest.
-  The $5/month plan raises that to 1000 subrequests and 30 s CPU. D1 free tier
-  (5 GB, 5M row reads/day) is far beyond this bot's needs.
+- **Free plan:** 100k requests/day, 10 ms CPU per invocation, 50 outbound
+  requests per invocation. The daily job is shaped for that cap: two panel
+  calls fetch every expiring line on the panel (`status: "expiring"`, the
+  Engine's own 14-day filter, plus one page of the newest expired), then one
+  Telegram message per reseller who has something due and one admin summary.
+  `DAILY_MESSAGE_BUDGET` (default 40) stops the run before the cap and the
+  admin summary names how many resellers were skipped, so overflow is visible
+  rather than silent. Below ~40 resellers with reminders due on the same day
+  nothing is skipped; past that, raise the budget on the $5/month plan (1000
+  requests, 30 s CPU). The admin "all lines" screen still makes one panel call
+  per linked reseller in a single request, so that screen is the first thing
+  to break past ~45 linked resellers on the free plan. D1 free tier (5 GB, 5M
+  row reads/day) is far beyond this bot's needs.
 - **Cron is UTC.** `0 9 * * *` is 09:00 GMT / 10:00 BST. Dates in reminders and
   `daysUntilExpiry`'s midnight boundary are UTC too; the Docker build used
   Europe/London.

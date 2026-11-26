@@ -230,3 +230,47 @@ export async function updateLineInfo(
     return false;
   }
 }
+
+/**
+ * Admin API — every line on the panel that is about to expire, for the daily
+ * reminders. Two calls for the whole panel instead of one per reseller:
+ *
+ *  - `status: "expiring"` is the Engine's own filter: expires within the next
+ *    14 days, which covers every reminder window the bot uses (REMINDER_DAYS).
+ *  - a single newest-first page of `status: "expired"`, kept only where the
+ *    expiry is less than a day old, so a line that lapsed at 03:00 is still
+ *    reported as "expiring today" when the job runs at 09:00 — the behaviour
+ *    the per-reseller listing had.
+ *
+ * Null on failure so the caller can tell "nothing expiring" from "panel down".
+ */
+export async function getExpiringLines(): Promise<XuiLine[] | null> {
+  const dayAgo = Math.floor(Date.now() / 1000) - 86400;
+  try {
+    const [expiring, recentlyExpired] = await Promise.all([
+      adminList<EngineLine>("lines.list", { status: "expiring", fields: LINE_LIST_FIELDS }),
+      adminCall<EngineLine[]>("lines.list", {
+        status: "expired",
+        sort: "expires_at",
+        order: "desc",
+        start: 0,
+        limit: 200,
+        fields: LINE_LIST_FIELDS,
+      }),
+    ]);
+    const seen = new Set<number>();
+    const rows: XuiLine[] = [];
+    for (const l of [...expiring, ...(Array.isArray(recentlyExpired) ? recentlyExpired : [])]) {
+      if (seen.has(l.id)) continue;
+      seen.add(l.id);
+      const line = toXuiLine(l);
+      const ts = normaliseExpDate(line.exp_date);
+      if (ts !== null && ts < dayAgo) continue; // older expiries from the "expired" page
+      rows.push(line);
+    }
+    return rows;
+  } catch (e) {
+    logFailure("getExpiringLines", e);
+    return null;
+  }
+}
