@@ -1,16 +1,17 @@
 import { serve } from "@hono/node-server";
 import { createXerocoolBot } from "./bot/xerocool.js";
 import { createXposedBot } from "./bot/xposed.js";
+import { applyBotDefaults } from "./bot/setup.js";
 import { createApp } from "./api/index.js";
+import { mountStaticApps } from "./api/static-node.js";
 import { startScheduler } from "./scheduler/index.js";
-import { initDb } from "./db/index.js";
+import { initDb } from "./db/sqlite.js";
 
 const PORT = Number(process.env.PORT || 3000);
 
 async function main() {
   const db = initDb(process.env.DATABASE_PATH || "./data/bot.db");
   console.log("[db] Initialised");
-
 
   const xerocoolBot = createXerocoolBot(db);
   xerocoolBot.start({
@@ -27,7 +28,12 @@ async function main() {
     });
   }
 
+  applyBotDefaults(xerocoolBot, xposedBot).catch((err) =>
+    console.error("[bot] applyBotDefaults failed:", err)
+  );
+
   const app = createApp(db, xerocoolBot, xposedBot);
+  mountStaticApps(app);
   serve({ fetch: app.fetch, port: PORT }, () => {
     console.log(`[api] Listening on :${PORT}`);
   });

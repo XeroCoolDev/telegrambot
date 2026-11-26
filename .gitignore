@@ -7,3 +7,11 @@ data/
 *.db-wal
 .claude/
 scripts/
+
+# Cloudflare Workers build (see worker/README.md)
+worker/node_modules/
+worker/public/
+worker/.wrangler/
+worker/.dev.vars
+worker/*.sql
+!worker/migrations/*.sql

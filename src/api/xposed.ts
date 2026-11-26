@@ -22,7 +22,7 @@ export function registerXerocoolXposedRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const line = await xui.getLineAsReseller(xuiApiKey, lineId);
     if (!line) return c.json({ error: "Line not found" }, 404);
 
-    const rows = db.getClaimsForLine.all(lineId) as {
+    const rows = await db.getClaimsForLine.all(lineId) as {
       telegram_id: number;
       username: string | null;
       first_name: string | null;
@@ -43,7 +43,7 @@ export function registerXerocoolXposedRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const line = await xui.getLineAsReseller(xuiApiKey, lineId);
     if (!line) return c.json({ error: "Line not found" }, 404);
 
-    db.unclaimLine.run(telegramId, lineId);
+    await db.unclaimLine.run(telegramId, lineId);
     return c.json({ success: true });
   });
 }
@@ -72,7 +72,7 @@ export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
 
   xposedApi.get("/lines", async (c) => {
     const tgId = c.get("xposedTelegramId");
-    const rows = db.getClaimedLineIds.all(tgId) as { xui_line_id: string }[];
+    const rows = await db.getClaimedLineIds.all(tgId) as { xui_line_id: string }[];
     if (rows.length === 0) return c.json([]);
 
     const lines = (
@@ -99,7 +99,7 @@ export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
     const tgId = c.get("xposedTelegramId");
     const lineId = c.req.param("id");
 
-    if (!db.isLineClaimedBy.get(tgId, lineId)) {
+    if (!await db.isLineClaimedBy.get(tgId, lineId)) {
       return c.json({ error: "Line not found" }, 404);
     }
 
@@ -132,7 +132,7 @@ export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
     const tgId = c.get("xposedTelegramId");
     const { lineId, enable } = await c.req.json<{ lineId: string; enable: boolean }>();
 
-    if (!db.isLineClaimedBy.get(tgId, lineId)) {
+    if (!await db.isLineClaimedBy.get(tgId, lineId)) {
       return c.json({ error: "Line not found" }, 404);
     }
 
@@ -149,12 +149,12 @@ export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
     const { lineId } = await c.req.json<{ lineId: string }>();
     if (!lineId) return c.json({ error: "Missing lineId" }, 400);
 
-    if (!db.isLineClaimedBy.get(tgId, lineId)) {
+    if (!await db.isLineClaimedBy.get(tgId, lineId)) {
       return c.json({ error: "Line not found" }, 404);
     }
 
     // Rate limit: once per 24 hours per (customer, line)
-    const prev = db.getRenewalRequest.get(tgId, lineId) as { requested_at: string } | undefined;
+    const prev = await db.getRenewalRequest.get(tgId, lineId) as { requested_at: string } | undefined;
     if (prev) {
       const prevMs = new Date(prev.requested_at + "Z").getTime();
       if (Date.now() - prevMs < RENEWAL_COOLDOWN_MS) {
@@ -173,7 +173,7 @@ export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
     const line = await xui.getLine(lineId);
     if (!line) return c.json({ error: "Line not found" }, 404);
 
-    const topic = db.getSupportTopic.get(tgId) as { thread_id: number } | undefined;
+    const topic = await db.getSupportTopic.get(tgId) as { thread_id: number } | undefined;
     if (!topic) {
       return c.json(
         { error: "Please send a message to the bot first so we can open a chat with you." },
@@ -205,14 +205,14 @@ export function createXposedApi(db: AppDb, xposedBot?: Bot): Hono<XposedEnv> {
         parse_mode: "HTML",
       });
       if (customerDmMsgId) {
-        db.recordRelayedMessage.run(sent.message_id, tgId, customerDmMsgId);
+        await db.recordRelayedMessage.run(sent.message_id, tgId, customerDmMsgId);
       }
     } catch (err) {
       console.error("[api] request-renewal post failed:", err);
       return c.json({ error: "Couldn't notify support. Try again shortly." }, 502);
     }
 
-    db.upsertRenewalRequest.run(tgId, lineId);
+    await db.upsertRenewalRequest.run(tgId, lineId);
     return c.json({ success: true });
   });
 

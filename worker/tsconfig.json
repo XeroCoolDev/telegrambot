@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": ["../src/**/*.ts"],
+  "exclude": [
+    "../src/xerocool-app",
+    "../src/xposed-app",
+    "../src/index.ts",
+    "../src/db/sqlite.ts",
+    "../src/scheduler/index.ts",
+    "../src/api/static-node.ts",
+    "../node_modules",
+    "node_modules"
+  ]
+}

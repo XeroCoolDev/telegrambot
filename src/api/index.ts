@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { cors } from "hono/cors";
 import type { Bot } from "grammy";
 import type { AppDb } from "../db/index.js";
@@ -10,6 +9,23 @@ import { registerCreditRoutes, registerBtcpayWebhook } from "./credits.js";
 import { registerAdminRoutes } from "./admin.js";
 import { registerXerocoolXposedRoutes, createXposedApi } from "./xposed.js";
 
+/** Paths owned by the API; static hosting must never answer for them. */
+export const API_PREFIXES = ["/xerocool", "/xposed", "/webhooks", "/telegram", "/setup", "/health"];
+
+/** Host that serves the Xposed (customer) mini-app; every other host serves XeroCool. */
+export function xposedHost(): string {
+  try {
+    return new URL(process.env.XPOSED_WEBAPP_URL || "").host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The API: everything except static hosting, which differs per runtime
+ * (`static-node.ts` reads ./dist, the Worker uses its assets binding) and is
+ * mounted by the entrypoint after this returns.
+ */
 export function createApp(db: AppDb, xerocoolBot: Bot, xposedBot?: Bot) {
   const app = new Hono();
 
@@ -36,41 +52,6 @@ export function createApp(db: AppDb, xerocoolBot: Bot, xposedBot?: Bot) {
   app.route("/xerocool", xerocoolApi);
   app.use("/xposed/*", cors());
   app.route("/xposed", xposedApi);
-
-  // Static hosting per hostname:
-  //   XPOSED_HOST  → serve Xposed mini-app at /
-  //   anything else → serve XeroCool mini-app at /
-  const xposedHost = (() => {
-    const u = process.env.XPOSED_WEBAPP_URL || "";
-    try {
-      return new URL(u).host.toLowerCase();
-    } catch {
-      return "";
-    }
-  })();
-
-  // Skip static serving for API/webhook/health paths
-  const apiPrefixes = ["/xerocool", "/xposed", "/webhooks", "/health"];
-
-  app.use("/*", async (c, next) => {
-    if (apiPrefixes.some((p) => c.req.path.startsWith(p))) return next();
-    const host = (c.req.header("host") || "").toLowerCase();
-    const isXposed = !!xposedHost && host === xposedHost;
-    const root = isXposed ? "./dist/xposed" : "./dist/public";
-    const handler = serveStatic({
-      root,
-      rewriteRequestPath: (p) => (p === "/" ? "/index.html" : p),
-    });
-    return handler(c, next);
-  });
-  app.get("/*", async (c, next) => {
-    if (apiPrefixes.some((p) => c.req.path.startsWith(p))) return next();
-    const host = (c.req.header("host") || "").toLowerCase();
-    const isXposed = !!xposedHost && host === xposedHost;
-    const root = isXposed ? "./dist/xposed" : "./dist/public";
-    const handler = serveStatic({ root, path: "index.html" });
-    return handler(c, next);
-  });
 
   return app;
 }

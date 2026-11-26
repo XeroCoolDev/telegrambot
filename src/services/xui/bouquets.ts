@@ -1,17 +1,23 @@
 import type { XuiLine } from "./types.js";
 import { getLine, getLineAsReseller, editLine } from "./lines.js";
 
-const XUI_ADULT_BOUQUET_IDS = new Set(
-  (process.env.XUI_ADULT_BOUQUET_IDS || "").split(",").map((s) => s.trim()).filter(Boolean)
-);
+// Read on use rather than at import: on Cloudflare Workers the env is not
+// populated when this module is first evaluated.
+function adultBouquetIds(): Set<string> {
+  return new Set(
+    (process.env.XUI_ADULT_BOUQUET_IDS || "").split(",").map((s) => s.trim()).filter(Boolean)
+  );
+}
 
 export function hasAdultBouquets(line: XuiLine): boolean {
+  const XUI_ADULT_BOUQUET_IDS = adultBouquetIds();
   if (XUI_ADULT_BOUQUET_IDS.size === 0) return false;
   const bouquets: (string | number)[] = JSON.parse(line.bouquet || "[]");
   return bouquets.some((id) => XUI_ADULT_BOUQUET_IDS.has(String(id)));
 }
 
 function withAdultBouquets(line: XuiLine, enable: boolean): number[] {
+  const XUI_ADULT_BOUQUET_IDS = adultBouquetIds();
   const bouquets: (string | number)[] = JSON.parse(line.bouquet || "[]");
   if (enable) {
     const existing = new Set(bouquets.map(String));
@@ -31,6 +37,7 @@ export async function toggleAdultContentAsAdmin(
   lineId: string,
   enable: boolean
 ): Promise<boolean> {
+  const XUI_ADULT_BOUQUET_IDS = adultBouquetIds();
   if (XUI_ADULT_BOUQUET_IDS.size === 0) return false;
   const lineData = await getLine(lineId);
   if (!lineData) return false;
@@ -47,6 +54,7 @@ export async function toggleAdultContent(
   lineId: string,
   enable: boolean
 ): Promise<boolean> {
+  const XUI_ADULT_BOUQUET_IDS = adultBouquetIds();
   if (XUI_ADULT_BOUQUET_IDS.size === 0) return false;
   const owned = await getLineAsReseller(resellerApiKey, lineId);
   if (!owned) return false;

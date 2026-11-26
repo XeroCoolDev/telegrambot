@@ -12,7 +12,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
   api.get("/admin/lines", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
 
-    const owners = db.getAllLinkedUsers.all() as DbUser[];
+    const owners = await db.getAllLinkedUsers.all() as DbUser[];
     const ownerByMemberId = new Map<string, DbUser>();
     for (const o of owners) {
       if (o.xui_user_id) ownerByMemberId.set(String(o.xui_user_id), o);
@@ -21,7 +21,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const lines = await xui.getLinesForMembers([...ownerByMemberId.keys()]);
     if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
 
-    const claimByLine = buildClaimByLine(db);
+    const claimByLine = await buildClaimByLine(db);
 
     return c.json(
       lines.map((line) => {
@@ -39,11 +39,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
 
   api.get("/admin/users", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
-    const users = db.db
-      .prepare(
-        "SELECT telegram_id, username, first_name, xui_user_id, xui_api_key, xui_username, permissions, created_at, last_accessed, reseller_group_chat_id FROM users ORDER BY created_at DESC"
-      )
-      .all() as any[];
+    const users = await db.listUsersForAdmin.all<any>();
 
     // Fold panel credits in via one paged users.list. If the panel is unreachable,
     // the map stays empty and every row reports credits: null — the UI still
@@ -55,14 +51,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     }
 
     // Last settled top-up per user — one grouped query instead of N lookups.
-    const lastTopUps = db.db
-      .prepare(
-        `SELECT telegram_id, credits, MAX(created_at) as created_at
-         FROM payments
-         WHERE status = 'settled'
-         GROUP BY telegram_id`
-      )
-      .all() as { telegram_id: number; credits: number; created_at: string }[];
+    const lastTopUps = await db.lastSettledTopUps.all<{ telegram_id: number; credits: number; created_at: string }>();
     const topUpByTgId = new Map(lastTopUps.map((r) => [r.telegram_id, r]));
 
     return c.json(
@@ -80,11 +69,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
 
   api.get("/admin/payments", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
-    const payments = db.db
-      .prepare(
-        "SELECT btcpay_invoice_id, telegram_id, credits, amount, currency, item_title, status, created_at FROM payments ORDER BY created_at DESC LIMIT 100"
-      )
-      .all();
+    const payments = await db.listRecentPayments.all();
     return c.json(payments);
   });
 
@@ -98,7 +83,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (!Number.isInteger(telegramId)) return c.json({ error: "Invalid telegram id" }, 400);
 
     const perPage = Math.min(50, Math.max(1, Number(c.req.query("perPage")) || 10));
-    const summary = db.getUserPaymentsSummary.get(telegramId) as {
+    const summary = await db.getUserPaymentsSummary.get(telegramId) as {
       total: number;
       settledCredits: number;
     };
@@ -107,7 +92,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
     // otherwise return an empty list and strand the pager.
     const page = Math.min(totalPages, Math.max(1, Number(c.req.query("page")) || 1));
 
-    const payments = db.getUserPaymentsPage.all(telegramId, perPage, (page - 1) * perPage);
+    const payments = await db.getUserPaymentsPage.all(telegramId, perPage, (page - 1) * perPage);
 
     return c.json({
       payments,
@@ -128,16 +113,16 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
 
     // Pre-create the user row if they haven't /start'd yet — username and
     // first_name will be filled in on their first interaction with the bot.
-    const targetUser = db.getUser.get(telegramId) as DbUser | undefined;
+    const targetUser = await db.getUser.get(telegramId) as DbUser | undefined;
     if (!targetUser) {
-      db.upsertUser.run(telegramId, null, null);
+      await db.upsertUser.run(telegramId, null, null);
     }
 
     // The panel never returns an account's API key, so a key already stored
     // is kept and apiKeyPresent reflects that; otherwise the admin pastes the
     // reseller's key on the user page once they generate it in their portal.
     const apiKey = targetUser?.xui_api_key || null;
-    db.linkXui.run(xuiUserId, apiKey, xuiUser.username || null, telegramId);
+    await db.linkXui.run(xuiUserId, apiKey, xuiUser.username || null, telegramId);
     return c.json({
       success: true,
       username: xuiUser.username,
@@ -155,17 +140,17 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
       return c.json({ error: "Invalid api_key (alphanumeric, 16–64 chars)" }, 400);
     }
 
-    const target = db.getUser.get(telegramId) as DbUser | undefined;
+    const target = await db.getUser.get(telegramId) as DbUser | undefined;
     if (!target?.xui_user_id) return c.json({ error: "User not linked to an XUI user" }, 404);
 
-    db.linkXui.run(target.xui_user_id, apiKey, target.xui_username || null, telegramId);
+    await db.linkXui.run(target.xui_user_id, apiKey, target.xui_username || null, telegramId);
     return c.json({ success: true });
   });
 
   api.post("/admin/unlink", async (c) => {
     if (!ADMIN_IDS.has(c.get("telegramId"))) return c.json({ error: "Forbidden" }, 403);
     const { telegramId } = await c.req.json<{ telegramId: number }>();
-    db.linkXui.run(null, null, null, telegramId);
+    await db.linkXui.run(null, null, null, telegramId);
     return c.json({ success: true });
   });
 
@@ -181,10 +166,10 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
       return c.json({ error: "You can't delete your own account" }, 400);
     }
 
-    const target = db.getUser.get(telegramId) as DbUser | undefined;
+    const target = await db.getUser.get(telegramId) as DbUser | undefined;
     if (!target) return c.json({ error: "User not found" }, 404);
 
-    const removed = db.deleteUserCascade(telegramId);
+    const removed = await db.deleteUserCascade(telegramId);
     console.log(
       `[admin] ${callerId} deleted user ${telegramId} (${removed.payments} payment row(s) removed)`
     );
@@ -202,10 +187,10 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
       return c.json({ error: "Invalid chat id (expected negative supergroup id like -1001234567890)" }, 400);
     }
 
-    const target = db.getUser.get(telegramId) as DbUser | undefined;
+    const target = await db.getUser.get(telegramId) as DbUser | undefined;
     if (!target) return c.json({ error: "User not found" }, 404);
 
-    db.setResellerGroupChatId.run(chatId, telegramId);
+    await db.setResellerGroupChatId.run(chatId, telegramId);
     return c.json({ success: true });
   });
 
@@ -215,7 +200,7 @@ export function registerAdminRoutes(api: Hono<AuthEnv>, db: AppDb) {
       telegramId: number;
       permissions: Record<string, boolean>;
     }>();
-    db.updatePermissions.run(JSON.stringify(permissions), telegramId);
+    await db.updatePermissions.run(JSON.stringify(permissions), telegramId);
     return c.json({ success: true });
   });
 }

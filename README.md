@@ -53,6 +53,13 @@ ngrok http 3000
 ```
 Set the ngrok URL as `XEROCOOL_WEBAPP_URL` in `.env` and in BotFather's Menu Button.
 
+## Deployment
+
+Two builds share this source tree:
+
+- **Docker on Saltbox** (below) — the production path on `main`.
+- **Cloudflare Workers** — the same bot on D1 + webhooks + a Cron Trigger, deployed from [`worker/`](worker/README.md). Separate tooling and lockfile; the Docker build never sees it.
+
 ## Deployment (Saltbox)
 
 Deployed by the [saltbox-telegrambot](https://github.com/XeroCoolDev/saltbox-telegrambot) Ansible role, installed as a `saltbox_mod`. See that repo for first-time setup (bootstrapping the role, registering it in the playbook, inventory config).

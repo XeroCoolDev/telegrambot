@@ -11,8 +11,8 @@ export interface LineClaim {
 }
 
 /** line_id → first linked customer, for annotating line lists. */
-export function buildClaimByLine(db: AppDb): Map<string, LineClaim> {
-  const rows = db.getAllClaimsWithCustomer.all() as LineClaim[];
+export async function buildClaimByLine(db: AppDb): Promise<Map<string, LineClaim>> {
+  const rows = await db.getAllClaimsWithCustomer.all() as LineClaim[];
   const map = new Map<string, LineClaim>();
   for (const r of rows) {
     if (!map.has(r.xui_line_id)) map.set(r.xui_line_id, r);
@@ -61,7 +61,7 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
     const lines = await xui.getUserLines(xuiUserId);
     if (!lines) return c.json({ error: "Failed to fetch lines" }, 502);
 
-    const claimByLine = buildClaimByLine(db);
+    const claimByLine = await buildClaimByLine(db);
     return c.json(lines.map((line) => toLineSummary(line, claimByLine.get(line.id))));
   });
 
@@ -91,7 +91,7 @@ export function registerLineRoutes(api: Hono<AuthEnv>, db: AppDb) {
     if (!lineData) return c.json({ error: "Line not found" }, 404);
 
     const owner = readOnly
-      ? (db.getUserByXuiId.get(String(lineData.member_id)) as DbUser | undefined)
+      ? (await db.getUserByXuiId.get(String(lineData.member_id)) as DbUser | undefined)
       : undefined;
 
     return c.json({

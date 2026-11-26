@@ -4,8 +4,6 @@ import { isRateLimited } from "../services/rate-limit.js";
 import { verifyClaimToken, generateClaimToken } from "../services/claim-token.js";
 import * as xui from "../services/xui/index.js";
 
-const SUPPORT_CHAT_ID = process.env.XPOSED_SUPPORT_CHAT_ID || "";
-
 /** Render a single line's credentials as a chat message. */
 async function formatLineMessage(lineId: string): Promise<string | null> {
   const line = await xui.getLine(lineId);
@@ -28,20 +26,7 @@ function escapeHtml(s: string): string {
 export function createXposedBot(db: AppDb) {
   const bot = new Bot(process.env.XPOSED_BOT_TOKEN!);
   const WEBAPP_URL = process.env.XPOSED_WEBAPP_URL || "";
-
-  // Default menu: commands list for everyone (overridden per-chat once linked)
-  bot.api
-    .setChatMenuButton({ menu_button: { type: "commands" } })
-    .catch((err) => console.error("[xposed-bot] setChatMenuButton default failed:", err));
-
-  // Clear any previously-registered scoped commands (we used to register /link;
-  // autocomplete auto-sends without args so it's unwanted)
-  if (SUPPORT_CHAT_ID) {
-    bot.api
-      .deleteMyCommands({ scope: { type: "chat", chat_id: Number(SUPPORT_CHAT_ID) } })
-      .catch(() => { /* nothing to clear — fine */ });
-  }
-
+  const SUPPORT_CHAT_ID = process.env.XPOSED_SUPPORT_CHAT_ID || "";
 
   async function setDashboardButton(chatId: number, enabled: boolean) {
     if (!WEBAPP_URL) return;
@@ -62,17 +47,6 @@ export function createXposedBot(db: AppDb) {
     }
   }
 
-  // Map thread_id → customer_telegram_id for reply routing
-  const threadToCustomer = new Map<number, number>();
-
-  // Pre-load existing topics into memory
-  try {
-    const existing = db.db.prepare("SELECT customer_telegram_id, thread_id FROM support_topics").all() as { customer_telegram_id: number; thread_id: number }[];
-    for (const row of existing) {
-      threadToCustomer.set(row.thread_id, row.customer_telegram_id);
-    }
-  } catch { /* table may not exist yet on first run */ }
-
   // Rate limit
   bot.use(async (ctx, next) => {
     const userId = ctx.from?.id;
@@ -87,7 +61,7 @@ export function createXposedBot(db: AppDb) {
     const tgUser = ctx.from!;
     const payload = ctx.match?.trim();
 
-    db.upsertCustomer.run(tgUser.id, tgUser.username || null, tgUser.first_name);
+    await db.upsertCustomer.run(tgUser.id, tgUser.username || null, tgUser.first_name);
 
     if (payload) {
       const lineId = verifyClaimToken(payload);
@@ -102,13 +76,13 @@ export function createXposedBot(db: AppDb) {
         await ctx.reply("We couldn't link your account right now. Please try again later.");
         return;
       }
-      if (db.getLineClaimedByOther.get(lineId, tgUser.id)) {
+      if (await db.getLineClaimedByOther.get(lineId, tgUser.id)) {
         await ctx.reply(
           "This subscription is already linked to another account. Please contact your provider if this is a mistake."
         );
         return;
       }
-      db.claimLine.run(tgUser.id, lineId);
+      await db.claimLine.run(tgUser.id, lineId);
 
       const msg = await formatLineMessage(lineId);
       await ctx.reply(
@@ -124,7 +98,7 @@ export function createXposedBot(db: AppDb) {
       return;
     }
 
-    const claimedIds = db.getClaimedLineIds.all(tgUser.id) as { xui_line_id: string }[];
+    const claimedIds = await db.getClaimedLineIds.all(tgUser.id) as { xui_line_id: string }[];
 
     if (claimedIds.length === 0) {
       await setDashboardButton(tgUser.id, false);
@@ -158,14 +132,14 @@ export function createXposedBot(db: AppDb) {
       await ctx.answerCallbackQuery({ text: "Couldn't link right now. Try again later.", show_alert: true });
       return;
     }
-    if (db.getLineClaimedByOther.get(lineId, tgUser.id)) {
+    if (await db.getLineClaimedByOther.get(lineId, tgUser.id)) {
       await ctx.answerCallbackQuery({
         text: "Already linked to another account. Contact your provider.",
         show_alert: true,
       });
       return;
     }
-    db.claimLine.run(tgUser.id, lineId);
+    await db.claimLine.run(tgUser.id, lineId);
 
     await ctx.answerCallbackQuery({ text: "Linked!" });
 
@@ -200,7 +174,7 @@ export function createXposedBot(db: AppDb) {
 
     // Case A: reaction happened in the support group — mirror to the customer's DM
     if (String(chatId) === SUPPORT_CHAT_ID) {
-      const mapping = db.getRelayedMessage.get(msgId) as
+      const mapping = await db.getRelayedMessage.get(msgId) as
         | { customer_telegram_id: number; customer_msg_id: number }
         | undefined;
       if (!mapping) return;
@@ -214,7 +188,7 @@ export function createXposedBot(db: AppDb) {
 
     // Case B: reaction happened in a customer's DM — mirror to the group topic
     if (update.chat.type === "private") {
-      const row = db.getGroupMsgByCustomerMsg.get(chatId, msgId) as
+      const row = await db.getGroupMsgByCustomerMsg.get(chatId, msgId) as
         | { group_msg_id: number }
         | undefined;
       if (!row) return;
@@ -236,7 +210,9 @@ export function createXposedBot(db: AppDb) {
       // Don't relay bot's own messages
       if (ctx.from?.id === bot.botInfo.id) return;
 
-      const customerTgId = threadToCustomer.get(threadId);
+      const customerTgId = (
+        await db.getCustomerByThread.get<{ customer_telegram_id: number }>(threadId)
+      )?.customer_telegram_id;
       if (!customerTgId) return;
 
       const text = ctx.message.text || "";
@@ -284,7 +260,7 @@ export function createXposedBot(db: AppDb) {
           return;
         }
 
-        const mapping = db.getRelayedMessage.get(replyTo.message_id) as
+        const mapping = await db.getRelayedMessage.get(replyTo.message_id) as
           | { customer_telegram_id: number; customer_msg_id: number }
           | undefined;
 
@@ -295,7 +271,7 @@ export function createXposedBot(db: AppDb) {
           } catch (err) {
             console.error("[xposed-bot] Failed to delete customer-side message:", err);
           }
-          db.deleteRelayedMessage.run(replyTo.message_id);
+          await db.deleteRelayedMessage.run(replyTo.message_id);
         }
 
         // Delete the group-side original and the /delete command
@@ -311,14 +287,14 @@ export function createXposedBot(db: AppDb) {
       }
 
       // Update activity
-      db.touchSupportTopic.run(customerTgId);
+      await db.touchSupportTopic.run(customerTgId);
 
       // If the reseller replied to a relayed customer message, thread back to
       // the customer's original so it renders as a reply on their side.
       let replyToCustomerMsgId: number | undefined;
       const replyTarget = ctx.message.reply_to_message;
       if (replyTarget) {
-        const mapping = db.getRelayedMessage.get(replyTarget.message_id) as
+        const mapping = await db.getRelayedMessage.get(replyTarget.message_id) as
           | { customer_telegram_id: number; customer_msg_id: number }
           | undefined;
         if (mapping && mapping.customer_telegram_id === customerTgId) {
@@ -332,7 +308,7 @@ export function createXposedBot(db: AppDb) {
             ? { message_id: replyToCustomerMsgId }
             : undefined,
         });
-        db.recordRelayedMessage.run(ctx.message.message_id, customerTgId, sent.message_id);
+        await db.recordRelayedMessage.run(ctx.message.message_id, customerTgId, sent.message_id);
       } catch (err) {
         console.error("[xposed-bot] Failed to relay reply:", err);
       }
@@ -350,7 +326,7 @@ export function createXposedBot(db: AppDb) {
     if (!text && !hasMedia) return;
 
     // Ensure customer exists in DB
-    db.upsertCustomer.run(tgUser.id, tgUser.username || null, tgUser.first_name);
+    await db.upsertCustomer.run(tgUser.id, tgUser.username || null, tgUser.first_name);
 
     if (!SUPPORT_CHAT_ID) {
       await ctx.reply("Support is not available right now.");
@@ -362,13 +338,12 @@ export function createXposedBot(db: AppDb) {
       : tgUser.first_name || `Customer ${tgUser.id}`;
 
     async function ensureTopic(): Promise<number | null> {
-      const existing = db.getSupportTopic.get(tgUser.id) as { thread_id: number } | undefined;
+      const existing = await db.getSupportTopic.get(tgUser.id) as { thread_id: number } | undefined;
       if (existing) return existing.thread_id;
 
       try {
         const topic = await bot.api.createForumTopic(Number(SUPPORT_CHAT_ID), customerName);
-        db.upsertSupportTopic.run(tgUser.id, topic.message_thread_id);
-        threadToCustomer.set(topic.message_thread_id, tgUser.id);
+        await db.upsertSupportTopic.run(tgUser.id, topic.message_thread_id);
         return topic.message_thread_id;
       } catch (err) {
         console.error("[xposed-bot] Failed to create topic:", err);
@@ -386,7 +361,7 @@ export function createXposedBot(db: AppDb) {
       let replyToGroupMsgId: number | undefined;
       const replyTarget = ctx.message.reply_to_message;
       if (replyTarget) {
-        const row = db.getGroupMsgByCustomerMsg.get(tgUser.id, replyTarget.message_id) as
+        const row = await db.getGroupMsgByCustomerMsg.get(tgUser.id, replyTarget.message_id) as
           | { group_msg_id: number }
           | undefined;
         if (row) replyToGroupMsgId = row.group_msg_id;
@@ -430,7 +405,7 @@ export function createXposedBot(db: AppDb) {
       }
 
       // Map group-side copy → customer's original, so reseller replies can thread back
-      db.recordRelayedMessage.run(groupMsgId, tgUser.id, ctx.message.message_id);
+      await db.recordRelayedMessage.run(groupMsgId, tgUser.id, ctx.message.message_id);
     }
 
     function isDeadThread(err: any): boolean {
@@ -446,13 +421,12 @@ export function createXposedBot(db: AppDb) {
       }
       try {
         await postToTopic(threadId);
-        db.touchSupportTopic.run(tgUser.id);
+        await db.touchSupportTopic.run(tgUser.id);
         return;
       } catch (err: any) {
         if (isDeadThread(err) && attempt === 0) {
           // Stored topic was deleted — wipe and let ensureTopic() create a fresh one
-          db.deleteSupportTopic.run(tgUser.id);
-          threadToCustomer.delete(threadId);
+          await db.deleteSupportTopic.run(tgUser.id);
           continue;
         }
         console.error("[xposed-bot] Failed to send to topic:", err);

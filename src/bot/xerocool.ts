@@ -16,17 +16,6 @@ export function createXerocoolBot(db: AppDb) {
     return ADMIN_IDS.has(userId);
   }
 
-  // Default menu button (bot-level): Dashboard web-app button. This also makes
-  // the "Open" button appear in the Telegram chat-list preview for the bot.
-  // Per-chat override flips it back to commands for unlinked users on /start.
-  if (WEBAPP_URL) {
-    bot.api
-      .setChatMenuButton({
-        menu_button: { type: "web_app", text: "Dashboard", web_app: { url: WEBAPP_URL } },
-      })
-      .catch((err) => console.error("[xerocool-bot] setChatMenuButton default failed:", err));
-  }
-
   async function setDashboardButton(chatId: number, enabled: boolean) {
     if (!WEBAPP_URL) return;
     try {
@@ -63,9 +52,9 @@ export function createXerocoolBot(db: AppDb) {
     const payload = ctx.match?.trim();
 
     // Upsert user (xui_user_id stays null until admin links it)
-    db.upsertUser.run(tgUser.id, tgUser.username || null, tgUser.first_name);
+    await db.upsertUser.run(tgUser.id, tgUser.username || null, tgUser.first_name);
 
-    const user = db.getUser.get(tgUser.id) as DbUser | undefined;
+    const user = await db.getUser.get(tgUser.id) as DbUser | undefined;
 
     if (!user?.xui_user_id) {
       await setDashboardButton(tgUser.id, false);
@@ -89,7 +78,7 @@ export function createXerocoolBot(db: AppDb) {
 
   // ── /credits ────────────────────────────────────────
   bot.command("credits", async (ctx) => {
-    const user = db.getUser.get(ctx.from!.id) as DbUser | undefined;
+    const user = await db.getUser.get(ctx.from!.id) as DbUser | undefined;
     if (!user?.xui_user_id) {
       return ctx.reply("Your account isn't linked yet. Please contact an administrator.");
     }
@@ -110,7 +99,7 @@ export function createXerocoolBot(db: AppDb) {
 
   // ── /status ─────────────────────────────────────────
   bot.command("status", async (ctx) => {
-    const user = db.getUser.get(ctx.from!.id) as DbUser | undefined;
+    const user = await db.getUser.get(ctx.from!.id) as DbUser | undefined;
     if (!user?.xui_user_id) {
       return ctx.reply("Your account isn't linked yet. Please contact an administrator.");
     }
@@ -139,15 +128,15 @@ export function createXerocoolBot(db: AppDb) {
 
     // Pre-create the user row if they haven't /start'd yet — username and
     // first_name fill in on their first interaction with the bot.
-    const targetUser = db.getUser.get(Number(telegramId)) as DbUser | undefined;
+    const targetUser = await db.getUser.get(Number(telegramId)) as DbUser | undefined;
     if (!targetUser) {
-      db.upsertUser.run(Number(telegramId), null, null);
+      await db.upsertUser.run(Number(telegramId), null, null);
     }
 
     // The panel never returns API keys: keep one already stored, otherwise the
     // admin pastes the reseller's key on their user page in the dashboard.
     const apiKey = targetUser?.xui_api_key || null;
-    db.linkXui.run(xuiUserId, apiKey, xuiUser.username || null, Number(telegramId));
+    await db.linkXui.run(xuiUserId, apiKey, xuiUser.username || null, Number(telegramId));
     await ctx.reply(
       `✅ Linked Telegram user ${telegramId} → XUI user ${xuiUser.username} (ID: ${xuiUserId})` +
         (apiKey ? "" : "\n\nNo reseller API key stored yet — add it on their user page in the dashboard.")
@@ -164,7 +153,7 @@ export function createXerocoolBot(db: AppDb) {
     }
 
     const invoiceId = args[0];
-    const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+    const payment = await db.getPayment.get(invoiceId) as DbPayment | undefined;
     if (!payment) {
       return ctx.reply(`Invoice \`${invoiceId}\` not found.`, { parse_mode: "Markdown" });
     }
@@ -178,9 +167,9 @@ export function createXerocoolBot(db: AppDb) {
       `Manual settle: BTCPay invoice ${invoiceId}`
     );
 
-    db.updatePaymentStatus.run(success ? "settled" : "failed", invoiceId);
+    await db.updatePaymentStatus.run(success ? "settled" : "failed", invoiceId);
 
-    const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
+    const fresh = await db.getPayment.get(invoiceId) as DbPayment | undefined;
     if (success) {
       if (fresh) await upsertInvoiceMessage(bot, db, fresh, { status: "settled", settledAt: new Date() });
       await notifyAdminPaymentSettled(bot, db, payment, invoiceId, true);

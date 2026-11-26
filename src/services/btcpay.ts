@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-const TIMEOUT = Number(process.env.API_TIMEOUT_MS || 10000);
+const timeoutMs = () => Number(process.env.API_TIMEOUT_MS || 10000);
 
 // ── Types ───────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ async function btcpayRequest<T>(
   opts: RequestInit = {}
 ): Promise<T | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT);
+  const timer = setTimeout(() => controller.abort(), timeoutMs());
 
   try {
     const res = await fetch(`${process.env.BTCPAY_URL}${path}`, {

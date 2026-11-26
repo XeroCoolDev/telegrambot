@@ -1,10 +1,8 @@
 import type { Bot } from "grammy";
 import type { AppDb, DbUser } from "../db/index.js";
 
-const XEROCOOL_ADMIN_CHAT_ID = process.env.XEROCOOL_ADMIN_CHAT_ID || "";
-
-function getUserLink(db: AppDb, telegramId: number): string {
-  const user = db.getUser.get(telegramId) as DbUser | undefined;
+async function getUserLink(db: AppDb, telegramId: number): Promise<string> {
+  const user = await db.getUser.get<DbUser>(telegramId);
   const label = user?.username
     ? `@${user.username}`
     : user?.first_name
@@ -33,11 +31,12 @@ export async function notifyAdminPaymentSettled(
   invoiceId: string,
   manual = false
 ) {
-  if (!XEROCOOL_ADMIN_CHAT_ID) return;
-  const userLink = getUserLink(db, payment.telegram_id);
+  const adminChatId = process.env.XEROCOOL_ADMIN_CHAT_ID || "";
+  if (!adminChatId) return;
+  const userLink = await getUserLink(db, payment.telegram_id);
   try {
     await bot.api.sendMessage(
-      XEROCOOL_ADMIN_CHAT_ID,
+      adminChatId,
       `💰 Payment ${manual ? "settled (manual)" : "received"}\nUser: ${userLink}\nAmount: ${payment.amount} ${payment.currency}\nCredits: ${payment.credits}\nInvoice: \`${invoiceId}\``,
       { parse_mode: "Markdown" }
     );

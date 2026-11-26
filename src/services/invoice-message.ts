@@ -154,7 +154,7 @@ export async function upsertInvoiceMessage(
   if (!receiptUpdated) {
     try {
       const sent = await bot.api.sendMessage(payment.telegram_id, body, opts);
-      db.setPaymentStatusMessageId.run(sent.message_id, payment.btcpay_invoice_id);
+      await db.setPaymentStatusMessageId.run(sent.message_id, payment.btcpay_invoice_id);
       receiptUpdated = true;
     } catch (err) {
       console.error("[invoice-message] send failed:", err);

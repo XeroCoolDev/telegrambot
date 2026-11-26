@@ -1,0 +1,19 @@
+{
+  "name": "telegrambot-worker",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Workers build of the bot. grammy/hono come from the root install; only the Workers tooling lives here.",
+  "scripts": {
+    "assets": "./build-assets.sh",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "wrangler dev",
+    "deploy": "./build-assets.sh && wrangler deploy",
+    "migrate": "wrangler d1 migrations apply BOT_DB --remote",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251001.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.40.0"
+  }
+}

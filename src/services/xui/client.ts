@@ -15,7 +15,7 @@
  * key each reseller generated in their own Reseller Portal profile.
  */
 
-const TIMEOUT = Number(process.env.API_TIMEOUT_MS || 10000);
+const timeoutMs = () => Number(process.env.API_TIMEOUT_MS || 10000);
 
 /** Up to 1000 rows per page on every list action. */
 const PAGE_SIZE = 1000;
@@ -46,7 +46,7 @@ export async function timedFetch(
   opts: RequestInit = {}
 ): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT);
+  const timer = setTimeout(() => controller.abort(), timeoutMs());
   try {
     return await fetch(url, { ...opts, signal: controller.signal });
   } finally {

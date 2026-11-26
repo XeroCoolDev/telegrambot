@@ -12,5 +12,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/xerocool-app", "src/xposed-app", "node_modules"]
+  "exclude": ["src/xerocool-app", "src/xposed-app", "src/worker.ts", "node_modules"]
 }

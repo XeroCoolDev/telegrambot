@@ -1,0 +1,76 @@
+# Cloudflare Workers build of the bot. Run every wrangler command from this
+# directory; `main` reaches back into the shared source tree.
+name = "telegrambot"
+main = "../src/worker.ts"
+compatibility_date = "2025-10-01"
+# node:crypto (HMAC for Telegram initData, BTCPay signatures, claim tokens)
+# and process.env for the shared code.
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Both mini-apps, built by ./build-assets.sh into public/app-xerocool and
+# public/app-xposed. The Worker picks one by hostname and does the SPA
+# fallback itself, so the platform must not redirect or rewrite paths.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
+
+# D1 replaces /opt/telegrambot/data/bot.db. Create it with
+#   wrangler d1 create telegrambot
+# and paste the id it prints here.
+[[d1_databases]]
+binding = "BOT_DB"
+database_name = "telegrambot"
+database_id = "REPLACE-WITH-DATABASE-ID"
+migrations_dir = "migrations"
+
+# Daily job (expiry + top-up reminders). Cron Triggers run in UTC — the Docker
+# build ran REMINDER_CRON in the container's TZ (Europe/London), so 09:00 local
+# is 09:00 UTC in winter and 08:00 UTC in summer.
+[triggers]
+crons = ["0 9 * * *"]
+
+# One hostname per mini-app, both on this Worker. Custom domains need the zone
+# on Cloudflare (it already is: Saltbox manages DNS there). For a trial without
+# DNS changes, comment these out and use the workers.dev URL — only the
+# XeroCool app is reachable that way, because the Xposed app is chosen by host.
+routes = [
+  { pattern = "xerocool-bot.example.com", custom_domain = true },
+  { pattern = "xposed-bot.example.com", custom_domain = true },
+]
+
+# Non-secret configuration. Same names as the Docker build's env.
+# Secrets are NOT here — see README.md ("Secrets").
+[vars]
+XEROCOOL_WEBAPP_URL = "https://xerocool-bot.example.com"
+XPOSED_WEBAPP_URL = "https://xposed-bot.example.com"
+XEROCOOL_ADMIN_TELEGRAM_IDS = ""
+XEROCOOL_ADMIN_CHAT_ID = ""
+XPOSED_SUPPORT_CHAT_ID = ""
+XPOSED_AUTHORISED_TELEGRAM_IDS = ""
+
+XUI_ADMIN_API_URL = "https://your-panel.com/your-admin-access-code"
+XUI_RESELLER_API_URL = "https://your-panel.com/your-reseller-access-code"
+XUI_ADULT_BOUQUET_IDS = ""
+
+BTCPAY_URL = "https://your-btcpay.com"
+BTCPAY_STORE_ID = ""
+BTCPAY_POS_APP_ID = ""
+
+API_TIMEOUT_MS = "10000"
+REMINDER_DAYS = "0,1,3"
+TOPUP_REMINDER_DAYS = "30"
+
+MAX_CONNECTIONS = "3"
+CONN_PRICE_1_2 = "4,2"
+CONN_PRICE_1_3 = "7,4"
+CONN_PRICE_2_3 = "3,2"
+CONN_DISCOUNT_MONTHS = "6"
+CONN_MULTIPLIER_MONTHS = "12"
+EXTEND_CONN_LOCK_DAYS = "30"
+
+RATE_LIMIT_MAX = "30"
+RATE_LIMIT_WINDOW_MS = "60000"

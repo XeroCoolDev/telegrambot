@@ -13,12 +13,23 @@ export type AuthEnv = {
   };
 };
 
-export const ADMIN_IDS = new Set(
-  (process.env.XEROCOOL_ADMIN_TELEGRAM_IDS || "")
-    .split(",")
-    .map((s) => Number(s.trim()))
-    .filter(Boolean)
-);
+let adminIdsCache: { source: string; ids: Set<number> } | undefined;
+
+function adminIds(): Set<number> {
+  const source = process.env.XEROCOOL_ADMIN_TELEGRAM_IDS || "";
+  if (adminIdsCache?.source !== source) {
+    adminIdsCache = {
+      source,
+      ids: new Set(source.split(",").map((s) => Number(s.trim())).filter(Boolean)),
+    };
+  }
+  return adminIdsCache.ids;
+}
+
+/** Admin Telegram ids from XEROCOOL_ADMIN_TELEGRAM_IDS, read on use rather than at import. */
+export const ADMIN_IDS = {
+  has: (telegramId: number): boolean => adminIds().has(telegramId),
+};
 
 /** XeroCool (reseller) auth middleware — validates initData, auto-registers admins */
 export function xerocoolAuthMiddleware(db: AppDb) {
@@ -33,16 +44,16 @@ export function xerocoolAuthMiddleware(db: AppDb) {
       return c.json({ error: "Too many requests" }, 429);
     }
 
-    let user = db.getUser.get(validated.user.id) as DbUser | undefined;
+    let user = await db.getUser.get(validated.user.id) as DbUser | undefined;
 
     // Auto-register admins if not in DB
     if (!user && ADMIN_IDS.has(validated.user.id)) {
-      db.upsertUser.run(
+      await db.upsertUser.run(
         validated.user.id,
         validated.user.username || null,
         validated.user.first_name
       );
-      user = db.getUser.get(validated.user.id) as DbUser | undefined;
+      user = await db.getUser.get(validated.user.id) as DbUser | undefined;
     }
 
     if (!user) return c.json({ error: "Account not registered" }, 403);
@@ -51,7 +62,7 @@ export function xerocoolAuthMiddleware(db: AppDb) {
     // mini-app open, not per request. Covers pre-created rows from admin-link
     // and handle changes while keeping writes minimal.
     if (validated.authDate > (user.last_auth_date ?? 0)) {
-      db.refreshUserProfile.run(
+      await db.refreshUserProfile.run(
         validated.user.username || null,
         validated.user.first_name,
         validated.authDate,

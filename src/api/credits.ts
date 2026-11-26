@@ -31,7 +31,7 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
   // GET /pending-payments — list pending invoices for the current user
   api.get("/pending-payments", async (c) => {
     const tgId = c.get("telegramId");
-    const payments = db.getPendingPayments.all(tgId) as DbPayment[];
+    const payments = await db.getPendingPayments.all(tgId) as DbPayment[];
     return c.json(
       payments.map((p) => ({
         invoiceId: p.btcpay_invoice_id,
@@ -49,7 +49,7 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
   // GET /payment-history — last 50 settled/failed/expired/invalid payments
   api.get("/payment-history", async (c) => {
     const tgId = c.get("telegramId");
-    const payments = db.getPaymentHistory.all(tgId) as DbPayment[];
+    const payments = await db.getPaymentHistory.all(tgId) as DbPayment[];
     return c.json(
       payments.map((p) => ({
         invoiceId: p.btcpay_invoice_id,
@@ -105,7 +105,7 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
 
     if (!invoice) return c.json({ error: "Failed to create invoice" }, 502);
 
-    db.insertPayment.run(
+    await db.insertPayment.run(
       tgId,
       invoice.id,
       credits,
@@ -117,7 +117,7 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
     );
 
     // Send the initial "Awaiting payment" receipt; edited in place as status changes
-    const payment = db.getPayment.get(invoice.id) as DbPayment | undefined;
+    const payment = await db.getPayment.get(invoice.id) as DbPayment | undefined;
     if (payment) {
       await upsertInvoiceMessage(bot, db, payment, { status: "pending" });
     }
@@ -131,16 +131,16 @@ export function registerCreditRoutes(api: Hono<AuthEnv>, db: AppDb, bot: Bot) {
 
 /** Shared settlement logic — used by webhook and manual /settle command */
 export async function settlePayment(bot: Bot, db: AppDb, invoiceId: string): Promise<boolean> {
-  const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+  const payment = await db.getPayment.get(invoiceId) as DbPayment | undefined;
   if (!payment) return false;
   if (payment.status === "settled") return true;
 
   // Atomic claim — only one caller can transition pending/processing → settling.
   // If another concurrent webhook already claimed it, bail without crediting again.
-  const claim = db.claimSettlement.run(invoiceId);
+  const claim = await db.claimSettlement.run(invoiceId);
   if (claim.changes === 0) {
     // Either already settled, or another handler is mid-flight (status 'settling'/'failed'/'invalid').
-    const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
+    const fresh = await db.getPayment.get(invoiceId) as DbPayment | undefined;
     return fresh?.status === "settled";
   }
 
@@ -150,9 +150,9 @@ export async function settlePayment(bot: Bot, db: AppDb, invoiceId: string): Pro
     `BTCPay invoice ${invoiceId}`
   );
 
-  db.updatePaymentStatus.run(success ? "settled" : "failed", invoiceId);
+  await db.updatePaymentStatus.run(success ? "settled" : "failed", invoiceId);
 
-  const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
+  const fresh = await db.getPayment.get(invoiceId) as DbPayment | undefined;
   if (fresh) {
     if (success) {
       await upsertInvoiceMessage(bot, db, fresh, { status: "settled", settledAt: new Date() });
@@ -180,7 +180,7 @@ export function registerBtcpayWebhook(app: Hono, db: AppDb, bot: Bot) {
 
     switch (type) {
       case "InvoiceReceivedPayment": {
-        const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+        const payment = await db.getPayment.get(invoiceId) as DbPayment | undefined;
         if (!payment || payment.status !== "pending") break;
 
         const methods = await btcpay.getInvoicePaymentMethods(invoiceId);
@@ -207,10 +207,10 @@ export function registerBtcpayWebhook(app: Hono, db: AppDb, bot: Bot) {
         break;
       }
       case "InvoiceProcessing": {
-        const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+        const payment = await db.getPayment.get(invoiceId) as DbPayment | undefined;
         if (payment && payment.status === "pending") {
-          db.updatePaymentStatus.run("processing", invoiceId);
-          const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
+          await db.updatePaymentStatus.run("processing", invoiceId);
+          const fresh = await db.getPayment.get(invoiceId) as DbPayment | undefined;
           if (fresh) await upsertInvoiceMessage(bot, db, fresh, { status: "processing" });
         }
         break;
@@ -225,11 +225,11 @@ export function registerBtcpayWebhook(app: Hono, db: AppDb, bot: Bot) {
         break;
       }
       case "InvoiceExpired": {
-        const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+        const payment = await db.getPayment.get(invoiceId) as DbPayment | undefined;
         if (payment && payment.status === "pending") {
-          db.updatePaymentStatus.run("expired", invoiceId);
+          await db.updatePaymentStatus.run("expired", invoiceId);
           const partiallyPaid = (event as any).partiallyPaid === true;
-          const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
+          const fresh = await db.getPayment.get(invoiceId) as DbPayment | undefined;
           if (fresh) {
             await upsertInvoiceMessage(bot, db, fresh, {
               status: partiallyPaid ? "expired_partial" : "expired",
@@ -239,10 +239,10 @@ export function registerBtcpayWebhook(app: Hono, db: AppDb, bot: Bot) {
         break;
       }
       case "InvoiceInvalid": {
-        const payment = db.getPayment.get(invoiceId) as DbPayment | undefined;
+        const payment = await db.getPayment.get(invoiceId) as DbPayment | undefined;
         if (payment && payment.status !== "settled") {
-          db.updatePaymentStatus.run("invalid", invoiceId);
-          const fresh = db.getPayment.get(invoiceId) as DbPayment | undefined;
+          await db.updatePaymentStatus.run("invalid", invoiceId);
+          const fresh = await db.getPayment.get(invoiceId) as DbPayment | undefined;
           if (fresh) await upsertInvoiceMessage(bot, db, fresh, { status: "invalid" });
         }
         break;

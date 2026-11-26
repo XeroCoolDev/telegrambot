@@ -4,6 +4,7 @@
 - Server: Node.js + TypeScript, grammY (bot), Hono (API), better-sqlite3, node-cron
 - Mini Apps: Vue 3 + Vite SPAs — `src/xerocool-app/` (reseller) and `src/xposed-app/` (customer)
 - Deployment: Docker on Saltbox behind Traefik
+- Alternative build: Cloudflare Workers (D1 + webhooks + Cron Trigger) from `worker/` — see `worker/README.md`
 
 ## Commands
 - `pnpm dev` — run server with tsx watch
@@ -11,6 +12,7 @@
 - `cd src/xposed-app && pnpm dev` — run Xposed (customer) mini-app dev server
 - `pnpm build` — compile server TypeScript (`tsc --strict`; excludes both mini-apps)
 - `sb install mod-telegrambot` — deploy on Saltbox
+- `cd worker && pnpm typecheck && pnpm deploy` — type-check against Workers types and deploy the Workers build
 
 ## Deployment
 - Deploys run from `/opt/telegrambot/repo`, which the Ansible role **hard-resets to `origin/main`** (`git` module, `force: true`). Always `git push origin main` before deploying — unpushed commits and uncommitted edits are destroyed.
@@ -23,6 +25,8 @@
 - `/opt/telegrambot/data/bot.db` is bind-mounted and survives rebuilds; schema changes must stay additive and guarded, as in `src/db/index.ts`.
 
 ## Architecture
+- Runtime-neutral core: every DB call is `await`ed through `src/db/statements.ts` (adapters: `db/sqlite.ts` for Node, `db/d1.ts` for Workers); env is read on use, never at module scope, because a Worker isolate has no env at import time; bots make no Telegram calls when constructed (`bot/setup.ts` does that once)
+- Entry points: `src/index.ts` (Node: polling, node-cron, static from ./dist) and `src/worker.ts` (Workers: webhooks at `/telegram/*`, Cron Trigger, assets binding). Keep new code in neither — put it in the shared modules
 - Panel is XUI.live Engine (https://xui.live/docs/api/): POST JSON `{"action": "<resource>.<verb>", …}` with `X-API-Key` to an access-code URL (`https://panel/<code>/`), NOT REST paths and NOT xui.one's `api.php?action=`
 - Two panel APIs, one format: Admin (`XUI_ADMIN_API_URL`, an **Admin API** access code + admin key) and Reseller (`XUI_RESELLER_API_URL`, a **Reseller API** access code + each reseller's own key)
 - `src/services/xui/engine.ts` maps Engine objects onto the bot's older string-typed XuiLine/XuiUser/XuiPackage shapes; routes, bots and the scheduler never see Engine objects

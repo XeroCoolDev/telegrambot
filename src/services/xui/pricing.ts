@@ -10,15 +10,19 @@ function parseConnPrice(env: string, fallbackStd: number, fallbackDisc: number) 
   };
 }
 
-const CONNECTION_PRICES: Record<string, { standard: number; discounted: number }> = {
-  "1-2": parseConnPrice(process.env.CONN_PRICE_1_2 || "", 4, 2),
-  "1-3": parseConnPrice(process.env.CONN_PRICE_1_3 || "", 7, 4),
-  "2-3": parseConnPrice(process.env.CONN_PRICE_2_3 || "", 3, 2),
-};
+// Business rules come from env, read on use: on Cloudflare Workers the env is
+// not populated when this module is first evaluated.
+function connectionPrices(): Record<string, { standard: number; discounted: number }> {
+  return {
+    "1-2": parseConnPrice(process.env.CONN_PRICE_1_2 || "", 4, 2),
+    "1-3": parseConnPrice(process.env.CONN_PRICE_1_3 || "", 7, 4),
+    "2-3": parseConnPrice(process.env.CONN_PRICE_2_3 || "", 3, 2),
+  };
+}
 
-const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS || 3);
-const CONN_DISCOUNT_MONTHS = Number(process.env.CONN_DISCOUNT_MONTHS || 6);
-const CONN_MULTIPLIER_MONTHS = Number(process.env.CONN_MULTIPLIER_MONTHS || 12);
+const maxConnections = () => Number(process.env.MAX_CONNECTIONS || 3);
+const connDiscountMonths = () => Number(process.env.CONN_DISCOUNT_MONTHS || 6);
+const connMultiplierMonths = () => Number(process.env.CONN_MULTIPLIER_MONTHS || 12);
 
 /**
  * Calculate available connection upgrade options with dynamic pricing.
@@ -26,6 +30,10 @@ const CONN_MULTIPLIER_MONTHS = Number(process.env.CONN_MULTIPLIER_MONTHS || 12);
  * - Multiplier applies if >CONN_MULTIPLIER_MONTHS remaining (ceil of monthsRemaining / N)
  */
 export function getConnectionUpgradeOptions(line: XuiLine): ConnectionOption[] {
+  const CONNECTION_PRICES = connectionPrices();
+  const MAX_CONNECTIONS = maxConnections();
+  const CONN_DISCOUNT_MONTHS = connDiscountMonths();
+  const CONN_MULTIPLIER_MONTHS = connMultiplierMonths();
   const currentConns = parseInt(line.max_connections, 10) || 1;
   if (currentConns >= MAX_CONNECTIONS) return [];
 
