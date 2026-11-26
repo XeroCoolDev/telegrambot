@@ -1,6 +1,7 @@
 # Cloudflare Workers build of the bot. Run every wrangler command from this
 # directory; `main` reaches back into the shared source tree.
 name = "telegrambot"
+account_id = "bd20beb67c1d692fe24565dcc13f56c2"
 main = "../src/worker.ts"
 compatibility_date = "2025-10-01"
 # node:crypto (HMAC for Telegram initData, BTCPay signatures, claim tokens)
@@ -13,10 +14,9 @@ preview_urls = false
 # on Cloudflare (Saltbox already manages DNS there). Commented out for the trial:
 # the Worker then lives on workers.dev, where only the XeroCool app is reachable,
 # because the Xposed app is chosen by hostname.
-# routes = [
-#   { pattern = "xerocool-bot.example.com", custom_domain = true },
-#   { pattern = "xposed-bot.example.com", custom_domain = true },
-# ]
+routes = [
+  { pattern = "xerocool-bot.vodpanel.xyz/*", zone_name = "vodpanel.xyz" },
+]
 
 # Both mini-apps, built by ./build-assets.sh into public/app-xerocool and
 # public/app-xposed. The Worker picks one by hostname and does the SPA
@@ -33,8 +33,8 @@ not_found_handling = "none"
 # and paste the id it prints here.
 [[d1_databases]]
 binding = "BOT_DB"
-database_name = "telegrambot-test"
-database_id = "a60b54db-3080-405f-9a95-5588ac3d7df8"
+database_name = "telegrambot"
+database_id = "37e13f60-95f9-405e-ac89-86fb3ef072e4"
 migrations_dir = "migrations"
 
 # Daily job (expiry + top-up reminders). Cron Triggers run in UTC — the Docker
@@ -46,7 +46,7 @@ crons = ["0 9 * * *"]
 # Non-secret configuration. Same names as the Docker build's env.
 # Secrets are NOT here — see README.md ("Secrets").
 [vars]
-XEROCOOL_WEBAPP_URL = "https://telegrambot.peter-morello.workers.dev"
+XEROCOOL_WEBAPP_URL = "https://xerocool-bot.vodpanel.xyz"
 XPOSED_WEBAPP_URL = "https://xposed-bot.example.com"
 XEROCOOL_ADMIN_TELEGRAM_IDS = "428588578"
 XEROCOOL_ADMIN_CHAT_ID = "-1003922039130"
@@ -55,7 +55,7 @@ XPOSED_AUTHORISED_TELEGRAM_IDS = ""
 
 XUI_ADMIN_API_URL = "https://panel.solidcheese.com/vtRGOTrk"
 XUI_RESELLER_API_URL = "https://panel.solidcheese.com/qkzwFWOM"
-XUI_ADULT_BOUQUET_IDS = ""
+XUI_ADULT_BOUQUET_IDS = "7"
 
 BTCPAY_URL = "https://btcpay168201.lndyn.com"
 BTCPAY_STORE_ID = "6TnocvFQCa7kPWv3Zme3wYf2Qo7cjrNfQ1bpuToiU8hP"
