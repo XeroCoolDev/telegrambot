@@ -15,3 +15,8 @@ worker/.wrangler/
 worker/.dev.vars
 worker/*.sql
 !worker/migrations/*.sql
+
+# SQLite exports for the D1 import carry reseller API keys — never commit
+/data.sql
+*.sql
+!worker/migrations/*.sql

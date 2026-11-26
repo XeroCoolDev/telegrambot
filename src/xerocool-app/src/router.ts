@@ -47,5 +47,19 @@ export const router = createRouter({
       component: () => import("./views/AdminUser.vue"),
       props: true,
     },
+    // The Dashboard in admin mode: one reseller's lines with the same
+    // filters, search, sort and paging as the reseller sees for their own.
+    {
+      path: "/admin/user/:ownerId/lines",
+      name: "admin-user-lines",
+      component: () => import("./views/Dashboard.vue"),
+      props: true,
+    },
+    {
+      path: "/admin/user/:id/payments",
+      name: "admin-user-payments",
+      component: () => import("./views/AdminUserPayments.vue"),
+      props: true,
+    },
   ],
 });

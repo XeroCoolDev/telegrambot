@@ -123,20 +123,17 @@ async function saveGroup() {
   }
 }
 
-// ── Payments ledger (paged server-side) ──
+// ── Payments: the five most recent; the full paged ledger has its own screen ──
 const payments = ref<AdminUserPayments | null>(null);
-const paymentsPage = ref(1);
 const paymentsLoading = ref(false);
 const paymentsError = ref<string | null>(null);
+const PAYMENTS_PREVIEW = 5;
 
 async function loadPayments() {
   paymentsLoading.value = true;
   paymentsError.value = null;
   try {
-    payments.value = await api.adminGetUserPayments(Number(props.id), paymentsPage.value, 10);
-    // The API clamps the page to the real range; follow it so the pager
-    // doesn't sit on a number that no longer exists.
-    paymentsPage.value = payments.value.page;
+    payments.value = await api.adminGetUserPayments(Number(props.id), 1, PAYMENTS_PREVIEW);
   } catch (e: any) {
     paymentsError.value = e.message || "Failed to load payments";
   } finally {
@@ -145,20 +142,15 @@ async function loadPayments() {
 }
 loadPayments();
 
-function setPaymentsPage(p: number) {
-  const last = payments.value?.totalPages ?? 1;
-  const next = Math.max(1, Math.min(p, last));
-  if (next === paymentsPage.value) return;
-  paymentsPage.value = next;
+function openAllPayments() {
   tg.HapticFeedback.selectionChanged();
-  loadPayments();
+  router.push(`/admin/user/${props.id}/payments`);
 }
 
-// ── Lines (one panel call, loaded once the user row shows they are linked) ──
+// ── Lines: the first few; the full list with filters is the Dashboard in admin mode ──
 const lines = ref<AdminLine[] | null>(null);
 const linesLoading = ref(false);
 const linesError = ref<string | null>(null);
-const showAllLines = ref(false);
 const LINES_PREVIEW = 5;
 
 async function loadLines() {
@@ -177,9 +169,12 @@ watch(user, (u) => {
   if (u?.xui_user_id && lines.value === null) loadLines();
 }, { immediate: true });
 
-const visibleLines = computed(() =>
-  showAllLines.value ? lines.value ?? [] : (lines.value ?? []).slice(0, LINES_PREVIEW)
-);
+const visibleLines = computed(() => (lines.value ?? []).slice(0, LINES_PREVIEW));
+
+function openAllLines() {
+  tg.HapticFeedback.selectionChanged();
+  router.push(`/admin/user/${props.id}/lines`);
+}
 
 function lineStatus(l: AdminLine): "active" | "expiring" | "expired" | "disabled" {
   if (l.status === "disabled") return "disabled";
@@ -190,7 +185,7 @@ function lineStatus(l: AdminLine): "active" | "expiring" | "expired" | "disabled
 
 function openLine(id: string) {
   tg.HapticFeedback.selectionChanged();
-  router.push(`/line/`);
+  router.push(`/line/${id}`);
 }
 
 function formatStamp(str: string | null | undefined): string {
@@ -369,8 +364,8 @@ async function deleteUser() {
       <template v-if="user.xui_user_id">
         <div class="section-header" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: baseline">
           <span>Lines<template v-if="lines"> ({{ lines.length }})</template></span>
-          <button v-if="lines && lines.length > LINES_PREVIEW" class="btn-edit" @click="showAllLines = !showAllLines">
-            {{ showAllLines ? "Show fewer" : "Show all" }}
+          <button v-if="lines && lines.length > LINES_PREVIEW" class="btn-edit" @click="openAllLines">
+            View all
           </button>
         </div>
 
@@ -403,10 +398,13 @@ async function deleteUser() {
         </template>
       </template>
 
-      <!-- Payments -->
+      <!-- Payments: most recent few; "View all" opens the paged ledger -->
       <div class="section-header" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: baseline">
         <span>Payments<template v-if="payments"> ({{ payments.total }})</template></span>
-        <span v-if="payments && payments.settledCredits > 0" class="settled-total">
+        <button v-if="payments && payments.total > PAYMENTS_PREVIEW" class="btn-edit" @click="openAllPayments">
+          View all
+        </button>
+        <span v-else-if="payments && payments.settledCredits > 0" class="settled-total">
           {{ payments.settledCredits }} credits settled
         </span>
       </div>
@@ -426,27 +424,19 @@ async function deleteUser() {
       </div>
 
       <template v-else-if="payments">
-        <div :class="{ 'payments-busy': paymentsLoading }">
-          <div v-for="p in payments.payments" :key="p.btcpay_invoice_id" class="card">
-            <div class="card-row">
-              <div style="min-width: 0; flex: 1">
-                <div style="font-weight: 600; font-size: 14px">{{ p.item_title }}</div>
-                <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
-                  {{ p.amount }} {{ p.currency }} · {{ p.credits }} credits
-                </div>
-                <div style="font-size: 11px; color: var(--tg-hint); margin-top: 2px">
-                  {{ formatStamp(p.created_at) }}
-                </div>
+        <div v-for="p in payments.payments" :key="p.btcpay_invoice_id" class="card">
+          <div class="card-row">
+            <div style="min-width: 0; flex: 1">
+              <div style="font-weight: 600; font-size: 14px">{{ p.item_title }}</div>
+              <div style="font-size: 12px; color: var(--tg-hint); margin-top: 2px">
+                {{ p.amount }} {{ p.currency }} · {{ p.credits }} credits
               </div>
-              <span class="status-pill" :class="p.status">{{ p.status }}</span>
+              <div style="font-size: 11px; color: var(--tg-hint); margin-top: 2px">
+                {{ formatStamp(p.created_at) }}
+              </div>
             </div>
+            <span class="status-pill" :class="p.status">{{ p.status }}</span>
           </div>
-        </div>
-
-        <div v-if="payments.totalPages > 1" class="pagination">
-          <button class="page-btn" :disabled="paymentsPage <= 1" @click="setPaymentsPage(paymentsPage - 1)">&laquo;</button>
-          <span class="page-info">{{ payments.page }} / {{ payments.totalPages }}</span>
-          <button class="page-btn" :disabled="paymentsPage >= payments.totalPages" @click="setPaymentsPage(paymentsPage + 1)">&raquo;</button>
         </div>
       </template>
 
@@ -576,12 +566,6 @@ async function deleteUser() {
   font-weight: 400;
   color: var(--tg-hint);
 }
-/* Dim the current page while the next one is in flight, so the pager
-   stays put instead of collapsing to a spinner and back */
-.payments-busy {
-  opacity: 0.5;
-  transition: opacity 0.15s;
-}
 .status-pill {
   font-size: 11px;
   font-weight: 600;
@@ -599,33 +583,6 @@ async function deleteUser() {
 .status-pill.expired,
 .status-pill.failed,
 .status-pill.invalid { background: #3b1111; color: #ff4d4f; }
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 12px;
-  padding: 8px 0;
-}
-.page-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: none;
-  background: var(--tg-btn);
-  color: var(--tg-btn-text);
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.page-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-.page-info {
-  font-size: 14px;
-  color: var(--tg-hint);
-}
 .btn-danger-link {
   display: block;
   margin: 20px auto 0;

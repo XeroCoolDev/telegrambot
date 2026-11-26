@@ -7,15 +7,51 @@ import { computed, ref, onActivated, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Check, Copy, FileText, Link2Off, Satellite, SearchX } from "lucide-vue-next";
 import { useStore } from "../composables/useStore";
+import { api, type AdminLine } from "../composables/useApi";
+
+/**
+ * Without `ownerId` this is the reseller's own dashboard. With it (route
+ * /admin/user/:ownerId/lines) it shows that reseller's lines to an admin:
+ * same stats, filters, search, sort and paging, minus credits and actions.
+ */
+const props = defineProps<{ ownerId?: string }>();
+const adminMode = computed(() => !!props.ownerId);
 
 const router = useRouter();
 const tg = window.Telegram.WebApp;
 
 const { user, subs, userLoading, subsLoading, loadUser, loadSubs } = useStore();
 loadUser();
-loadSubs();
+if (!adminMode.value) loadSubs();
 
-const loading = computed(() => userLoading.value || subsLoading.value);
+// ── Admin mode: one reseller's lines, one panel call ──
+const ownerLines = ref<AdminLine[] | null>(null);
+const ownerLoading = ref(false);
+const ownerError = ref<string | null>(null);
+
+async function loadOwnerLines() {
+  if (!props.ownerId || ownerLoading.value) return;
+  ownerLoading.value = true;
+  ownerError.value = null;
+  try {
+    ownerLines.value = await api.adminGetUserLines(Number(props.ownerId));
+  } catch (e: any) {
+    ownerError.value = e.message || "Failed to load lines";
+  } finally {
+    ownerLoading.value = false;
+  }
+}
+
+const ownerLabel = computed(() => {
+  const first = ownerLines.value?.[0];
+  return first?.ownerName || first?.ownerXuiUsername || (props.ownerId ? `reseller ${props.ownerId}` : "");
+});
+
+const loading = computed(() =>
+  adminMode.value
+    ? userLoading.value || (ownerLoading.value && !ownerLines.value)
+    : userLoading.value || subsLoading.value
+);
 
 const search = ref("");
 const page = ref(1);
@@ -25,11 +61,27 @@ const statusFilter = ref<"active" | "expiring" | "expired" | "disabled" | null>(
 // Re-fetch when returning to this page (keep-alive reactivation)
 onActivated(() => {
   loadUser();
-  loadSubs();
+  if (adminMode.value) loadOwnerLines();
+  else loadSubs();
 });
 
+// Admin mode: (re)load when the owner changes and start from clean filters
+watch(
+  () => props.ownerId,
+  (id) => {
+    if (!id) return;
+    search.value = "";
+    statusFilter.value = null;
+    page.value = 1;
+    loadOwnerLines();
+  },
+  { immediate: true }
+);
+
 /** The list the page works from, before any filtering. */
-const allLines = computed<any[]>(() => (subs.value as any[] | null) ?? []);
+const allLines = computed<any[]>(
+  () => ((adminMode.value ? ownerLines.value : subs.value) as any[] | null) ?? []
+);
 
 // ── Sorting ──
 type SortKey = "newest" | "expiry-asc" | "expiry-desc" | "name";
@@ -240,7 +292,10 @@ function tapLine(id: string) {
 
     <template v-else-if="user">
       <div style="font-size: 13px; color: var(--tg-hint); margin-bottom: 12px">
-        <template v-if="user.linked">
+        <template v-if="adminMode">
+          Lines of <b style="color: var(--tg-text)">{{ ownerLabel }}</b>
+        </template>
+        <template v-else-if="user.linked">
           Logged in as <b style="color: var(--tg-text)">{{ user.xuiUsername }}</b>
         </template>
         <template v-else>
@@ -249,8 +304,8 @@ function tapLine(id: string) {
       </div>
 
       <!-- Stats -->
-      <div class="stats-grid" :class="{ 'stats-grid-4': !user.linked }">
-        <div v-if="user.linked" class="stat-card stat-card-credits" @click="router.push('/buy')">
+      <div class="stats-grid" :class="{ 'stats-grid-4': !user.linked || adminMode }">
+        <div v-if="user.linked && !adminMode" class="stat-card stat-card-credits" @click="router.push('/buy')">
           <div class="stat-value">{{ user.credits }}</div>
           <div class="stat-label">Credits</div>
         </div>
@@ -273,7 +328,7 @@ function tapLine(id: string) {
       </div>
 
       <!-- Actions — buying and creating both need the caller's own reseller key -->
-      <div style="display: flex; gap: 8px; margin-bottom: 16px">
+      <div v-if="!adminMode" style="display: flex; gap: 8px; margin-bottom: 16px">
         <!-- Admins get in even unlinked, to preview what resellers see -->
         <button
           v-if="(user.linked && user.permissions?.canBuyCredits !== false) || user.isAdmin"
@@ -298,7 +353,7 @@ function tapLine(id: string) {
       </div>
 
       <!-- Search + sort -->
-      <div v-if="subs && subs.length > 0" class="list-controls">
+      <div v-if="allLines.length > 0" class="list-controls">
         <input
           v-model="search"
           type="search"
@@ -315,9 +370,15 @@ function tapLine(id: string) {
         </select>
       </div>
 
-      <div v-if="!subs || subs.length === 0" class="empty-state">
+      <div v-if="adminMode && ownerError" class="empty-state">
+        <SearchX class="icon-svg" />
+        <p>{{ ownerError }}</p>
+      </div>
+
+      <div v-else-if="allLines.length === 0" class="empty-state">
         <Satellite class="icon-svg" />
-        <p v-if="!user.linked">No reseller account linked.<br />Open Admin to manage resellers and see their lines.</p>
+        <p v-if="adminMode">This reseller has no lines.</p>
+        <p v-else-if="!user.linked">No reseller account linked.<br />Open Admin to manage resellers and see their lines.</p>
         <p v-else>No active lines found.</p>
       </div>
 
