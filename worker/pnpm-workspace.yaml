@@ -1,0 +1,7 @@
+# Makes worker/ its own pnpm root. Without this, pnpm walks up to the repo's
+# pnpm-workspace.yaml and installs the Docker build's dependencies instead of
+# these, leaving node_modules here empty. Kept out of the root workspace on
+# purpose so the root lockfile, frozen in the Dockerfile, never changes.
+allowBuilds:
+  esbuild: true
+  workerd: true
