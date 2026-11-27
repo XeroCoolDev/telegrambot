@@ -132,6 +132,17 @@ pnpm exec wrangler secret put X   # secrets
 - **Rate limiting is per isolate**, so it is a brake rather than a strict quota.
 - **"Already reminded today"** dedupe is gone: it was an in-memory map that never
   survived a restart. One cron run per day sends each reminder once.
+- **The admin digest is sent every run**, even when nothing is due, so a missing
+  digest at 09:00 UTC means the cron did not fire. It lists every reseller with a
+  line in the panel's 14-day "expiring" window, who was reminded, who is overdue
+  for a top-up and whether the message budget was hit. `/digest` in the bot (admins
+  only) runs the same job as a dry run and replies with the digest: nothing is
+  sent to resellers and no invoices are expired or pruned.
+- **Admins never get the top-up reminder** (`XEROCOOL_ADMIN_TELEGRAM_IDS`); they
+  still get expiry reminders for lines on their own account.
+- **Workers Logs** are on (`[observability]`), so past invocations — a BTCPay
+  webhook delivery, a cron run — are searchable in the dashboard under
+  Workers → telegrambot → Logs for three days.
 - **Reserved paths:** `/telegram/*`, `/setup/*`, `/webhooks/*`, `/health`,
   `/xerocool/*`, `/xposed/*` never serve mini-app assets.
 - **Logs** are in `wrangler tail` or the dashboard, not `docker logs`.

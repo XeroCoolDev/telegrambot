@@ -27,6 +27,7 @@
 
 ## Architecture
 - Line lists are paged BY THE PANEL: `/subscriptions` and `/admin/user/:id/lines` pass `status`, `q`, `sort`, `page`, `perPage` (≤100) to `lines.list` and return one page plus `meta.total` (`api/lines.ts` buildLinesPage). Never fetch a reseller's whole line list in one request — Workers meter CPU per request and a 4,000-line reseller blew the free plan's 10 ms
+- Daily job (`src/scheduler/daily.ts`): two panel calls + one grouped D1 query, one message per reseller with something due, admins skip the top-up nag, and an admin digest EVERY run (lists all resellers with lines in the 14-day window). `/digest` bot command = dry run for admins. Any change here must keep the Worker under 50 subrequests per run
 - Runtime-neutral core: every DB call is `await`ed through `src/db/statements.ts` (adapters: `db/sqlite.ts` for Node, `db/d1.ts` for Workers); env is read on use, never at module scope, because a Worker isolate has no env at import time; bots make no Telegram calls when constructed (`bot/setup.ts` does that once)
 - Entry points: `src/index.ts` (Node: polling, node-cron, static from ./dist) and `src/worker.ts` (Workers: webhooks at `/telegram/*`, Cron Trigger, assets binding). Keep new code in neither — put it in the shared modules
 - Panel is XUI.live Engine (https://xui.live/docs/api/): POST JSON `{"action": "<resource>.<verb>", …}` with `X-API-Key` to an access-code URL (`https://panel/<code>/`), NOT REST paths and NOT xui.one's `api.php?action=`

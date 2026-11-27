@@ -1,5 +1,5 @@
 import type { Bot } from "grammy";
-import type { AppDb, DbUser, DbPayment } from "../db/index.js";
+import type { AppDb, DbUser } from "../db/index.js";
 import * as xui from "../services/xui/index.js";
 
 /**
@@ -136,14 +136,42 @@ function expirySection(
 }
 
 /** Days since the reseller's last settled top-up, if it is overdue; else null. */
-async function overdueTopUpDays(db: AppDb, user: DbUser, threshold: number): Promise<number | null> {
-  if (threshold <= 0) return null;
-  const lastPayment = await db.getLastSettledPayment.get<DbPayment>(user.telegram_id);
-  if (!lastPayment?.created_at) return null;
-  const lastDate = new Date(lastPayment.created_at.replace(" ", "T") + "Z").getTime();
+function overdueTopUpDays(lastCreatedAt: string | undefined, threshold: number): number | null {
+  if (threshold <= 0 || !lastCreatedAt) return null;
+  const lastDate = new Date(lastCreatedAt.replace(" ", "T") + "Z").getTime();
   if (isNaN(lastDate)) return null;
   const daysSince = Math.floor((Date.now() - lastDate) / 86400000);
   return daysSince >= threshold ? daysSince : null;
+}
+
+/** Admin Telegram ids. Admins run the shop, so they never get the top-up nag. */
+function adminIds(): Set<number> {
+  return new Set(
+    (process.env.XEROCOOL_ADMIN_TELEGRAM_IDS || "").split(",").map((s) => Number(s.trim())).filter(Boolean)
+  );
+}
+
+function userLabel(user: DbUser): string {
+  return user.username || user.first_name || user.xui_username || String(user.telegram_id);
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n !== 1 ? "s" : ""}`;
+}
+
+export interface DailyRunOptions {
+  /**
+   * Compute everything and build the admin summary, but change nothing: no
+   * invoice expiry/pruning, no reseller messages, no message to the admin
+   * chat. The summary is returned so the caller can show it where it likes.
+   */
+  dryRun?: boolean;
+}
+
+export interface DailyRunResult {
+  /** The admin summary, Markdown. */
+  summary: string;
+  resellersReminded: number;
 }
 
 /**
@@ -154,27 +182,35 @@ async function overdueTopUpDays(db: AppDb, user: DbUser, threshold: number): Pro
  *
  * Outbound calls are what the Worker runtime meters, so the job is shaped
  * around them: two panel calls for every expiring line on the panel (not one
- * per reseller), one Telegram message per reseller carrying both the expiry
- * and the top-up reminder, and one admin summary. If the message budget runs
- * out the remaining resellers are skipped and the admin summary says so.
+ * per reseller), one D1 query for every reseller's last top-up, one Telegram
+ * message per reseller carrying both the expiry and the top-up reminder, and
+ * one admin summary. If the message budget runs out the remaining resellers
+ * are skipped and the admin summary says so.
+ *
+ * The admin summary is sent every run, even when there is nothing to do, so a
+ * missing summary means the job did not run.
  */
-export async function runDailyTasks(db: AppDb, bot: Bot): Promise<void> {
+export async function runDailyTasks(db: AppDb, bot: Bot, opts: DailyRunOptions = {}): Promise<DailyRunResult> {
+  const dryRun = opts.dryRun === true;
   const REMINDER_DAYS = reminderDays();
   const TOPUP_REMINDER_DAYS = Number(process.env.TOPUP_REMINDER_DAYS || 30);
+  const ADMINS = adminIds();
   let budget = messageBudget();
-  console.log(`[scheduler] Running daily tasks (reminder days: [${REMINDER_DAYS.join(", ")}], message budget ${budget})`);
+  console.log(`[scheduler] Running daily tasks${dryRun ? " (dry run)" : ""} (reminder days: [${REMINDER_DAYS.join(", ")}], message budget ${budget})`);
 
-  // Expire stale pending payments
-  const expired = await db.expireOldPending.run();
-  if (expired.changes > 0) {
-    console.log(`[scheduler] Expired ${expired.changes} stale pending payments`);
-  }
+  if (!dryRun) {
+    // Expire stale pending payments
+    const expired = await db.expireOldPending.run();
+    if (expired.changes > 0) {
+      console.log(`[scheduler] Expired ${expired.changes} stale pending payments`);
+    }
 
-  // Prune terminal payments older than 90 days (keeps settled rows forever
-  // for audit; only removes expired/invalid/failed clutter)
-  const pruned = await db.pruneTerminalPayments.run();
-  if (pruned.changes > 0) {
-    console.log(`[scheduler] Pruned ${pruned.changes} old terminal payments`);
+    // Prune terminal payments older than 90 days (keeps settled rows forever
+    // for audit; only removes expired/invalid/failed clutter)
+    const pruned = await db.pruneTerminalPayments.run();
+    if (pruned.changes > 0) {
+      console.log(`[scheduler] Pruned ${pruned.changes} old terminal payments`);
+    }
   }
 
   const linkedUsers = await db.getAllLinkedUsers.all<DbUser>();
@@ -183,13 +219,24 @@ export async function runDailyTasks(db: AppDb, bot: Bot): Promise<void> {
     if (u.xui_user_id) userByMember.set(String(u.xui_user_id), u);
   }
 
+  // Every reseller's last settled top-up in one query, not one per reseller.
+  const lastTopUpByUser = new Map<number, string>();
+  for (const row of await db.lastSettledTopUps.all<{ telegram_id: number; created_at: string }>()) {
+    lastTopUpByUser.set(row.telegram_id, row.created_at);
+  }
+
   // One panel-wide fetch, then group by owner. Null = panel unreachable: the
   // top-up reminders still go out and the admin is told expiry ones did not.
   const expiringLines = await xui.getExpiringLines();
   const linesByTelegramId = new Map<number, xui.XuiLine[]>();
+  let unlinkedOwnerLines = 0;
   for (const line of expiringLines ?? []) {
+    if (!xui.isLineEnabled(line)) continue;
     const owner = userByMember.get(String(line.member_id));
-    if (!owner) continue;
+    if (!owner) {
+      unlinkedOwnerLines++;
+      continue;
+    }
     const list = linesByTelegramId.get(owner.telegram_id) ?? [];
     list.push(line);
     linesByTelegramId.set(owner.telegram_id, list);
@@ -197,12 +244,15 @@ export async function runDailyTasks(db: AppDb, bot: Bot): Promise<void> {
 
   const adminExpiry: { username: string; count: number }[] = [];
   const adminTopUp: { username: string; daysSince: number }[] = [];
+  const remindedCountByUser = new Map<number, number>();
   let skipped = 0;
 
   for (const user of linkedUsers) {
     try {
       const expiry = expiringLines ? expirySection(linesByTelegramId.get(user.telegram_id) ?? [], REMINDER_DAYS) : null;
-      const topUpDays = await overdueTopUpDays(db, user, TOPUP_REMINDER_DAYS);
+      const topUpDays = ADMINS.has(user.telegram_id)
+        ? null
+        : overdueTopUpDays(lastTopUpByUser.get(user.telegram_id), TOPUP_REMINDER_DAYS);
       if (!expiry && topUpDays === null) continue;
 
       if (budget <= 0) {
@@ -222,58 +272,89 @@ export async function runDailyTasks(db: AppDb, bot: Bot): Promise<void> {
           : "Use /start to open the dashboard and buy more credits.";
 
       budget--;
-      await bot.api.sendMessage(user.telegram_id, `${parts.join("\n\n")}\n\n${action}`, {
-        parse_mode: "Markdown",
-      });
+      if (!dryRun) {
+        await bot.api.sendMessage(user.telegram_id, `${parts.join("\n\n")}\n\n${action}`, {
+          parse_mode: "Markdown",
+        });
+      }
 
-      const label = user.username || user.first_name || String(user.telegram_id);
+      const label = userLabel(user);
       if (expiry) {
         adminExpiry.push({ username: label, count: expiry.count });
-        console.log(`[scheduler] Reminded ${user.telegram_id} about ${expiry.count} expiring line(s)`);
+        remindedCountByUser.set(user.telegram_id, expiry.count);
+        if (!dryRun) console.log(`[scheduler] Reminded ${user.telegram_id} about ${expiry.count} expiring line(s)`);
       }
       if (topUpDays !== null) {
         adminTopUp.push({ username: label, daysSince: topUpDays });
-        console.log(`[scheduler] Top-up reminder sent to ${user.telegram_id} (${topUpDays}d since last payment)`);
+        if (!dryRun) console.log(`[scheduler] Top-up reminder sent to ${user.telegram_id} (${topUpDays}d since last payment)`);
       }
     } catch (err) {
       console.error(`[scheduler] Error reminding user ${user.telegram_id}:`, err);
     }
   }
 
-  // One admin message with everything the run did and anything it could not
-  const adminChatId = process.env.XEROCOOL_ADMIN_CHAT_ID;
-  if (!adminChatId) return;
-
+  // ── Admin summary: everything the run saw, did, and could not do ──
   const sections: string[] = [];
+  const windowDesc = REMINDER_DAYS.map((d) => dayLabel(d)).join(", ");
+
   if (!expiringLines) {
-    sections.push("❌ *Panel unreachable — no expiry reminders were sent today.*");
+    sections.push("❌ *Panel unreachable — no expiry reminders were sent.*");
+  } else {
+    // Every reseller with a line in the panel's "expiring" window (14 days),
+    // whether or not a reminder was due today — the day-by-day picture.
+    const overview = linkedUsers
+      .map((u) => ({ user: u, lines: linesByTelegramId.get(u.telegram_id) ?? [] }))
+      .filter((r) => r.lines.length > 0)
+      .sort((a, b) => b.lines.length - a.lines.length);
+    const total = overview.reduce((sum, r) => sum + r.lines.length, 0) + unlinkedOwnerLines;
+
+    if (total === 0) {
+      sections.push("✅ *No lines expiring in the next 14 days.*");
+    } else {
+      const rows = overview.map((r) => {
+        const soonest = Math.min(...r.lines.map((l) => xui.daysUntilExpiry(l.exp_date) ?? 99));
+        const reminded = remindedCountByUser.get(r.user.telegram_id);
+        const tail = reminded ? `, ${reminded} reminded` : "";
+        return `• ${escapeMd(userLabel(r.user))} — ${plural(r.lines.length, "line")} (soonest ${dayLabel(Math.max(0, soonest))}${tail})`;
+      });
+      if (unlinkedOwnerLines > 0) {
+        rows.push(`• _accounts not linked to the bot_ — ${plural(unlinkedOwnerLines, "line")}`);
+      }
+      sections.push(`📊 *${plural(total, "line")} expiring within 14 days*\n\n${rows.join("\n")}`);
+    }
+
+    if (adminExpiry.length > 0) {
+      const reminded = adminExpiry.reduce((sum, r) => sum + r.count, 0);
+      sections.push(`🔔 *Expiry reminders ${dryRun ? "due" : "sent"} (${windowDesc}):* ${plural(reminded, "line")} across ${plural(adminExpiry.length, "reseller")}`);
+    } else {
+      sections.push(`🔔 No expiry reminders ${dryRun ? "due" : "sent"} (${windowDesc}).`);
+    }
   }
-  if (adminExpiry.length > 0) {
-    const total = adminExpiry.reduce((sum, r) => sum + r.count, 0);
-    const windowDesc = REMINDER_DAYS.map((d) => dayLabel(d)).join(", ");
-    const list = adminExpiry
-      .sort((a, b) => b.count - a.count)
-      .map((r) => `• ${escapeMd(r.username)} — ${r.count} line${r.count !== 1 ? "s" : ""}`)
-      .join("\n");
-    sections.push(`📊 *${total} line${total !== 1 ? "s" : ""} expiring (${windowDesc})*\n\n${list}`);
-  }
+
   if (adminTopUp.length > 0) {
     const list = adminTopUp
       .sort((a, b) => b.daysSince - a.daysSince)
       .map((r) => `• ${escapeMd(r.username)} — ${r.daysSince} days`)
       .join("\n");
-    sections.push(`💰 *${adminTopUp.length} user${adminTopUp.length !== 1 ? "s" : ""} overdue for a credit top-up*\n\n${list}`);
+    sections.push(`💰 *${plural(adminTopUp.length, "reseller")} overdue for a credit top-up (${TOPUP_REMINDER_DAYS}+ days)*\n\n${list}`);
   }
   if (skipped > 0) {
     sections.push(
-      `⚠️ *${skipped} reseller${skipped !== 1 ? "s" : ""} not reminded* — the run hit its message budget (DAILY_MESSAGE_BUDGET=${messageBudget()}). Raise it or move to a plan with a higher request limit.`
+      `⚠️ *${plural(skipped, "reseller")} not reminded* — the run hit its message budget (DAILY_MESSAGE_BUDGET=${messageBudget()}). Raise it or move to a plan with a higher request limit.`
     );
   }
-  if (sections.length === 0) return;
 
-  try {
-    await bot.api.sendMessage(adminChatId, sections.join("\n\n"), { parse_mode: "Markdown" });
-  } catch (err) {
-    console.error("[scheduler] Failed to send admin summary:", err);
+  const heading = dryRun ? "🧪 *Daily digest — dry run, nothing sent*" : "📅 *Daily digest*";
+  const summary = [heading, ...sections].join("\n\n");
+
+  const adminChatId = process.env.XEROCOOL_ADMIN_CHAT_ID;
+  if (!dryRun && adminChatId) {
+    try {
+      await bot.api.sendMessage(adminChatId, summary, { parse_mode: "Markdown" });
+    } catch (err) {
+      console.error("[scheduler] Failed to send admin summary:", err);
+    }
   }
+
+  return { summary, resellersReminded: adminExpiry.length + adminTopUp.length };
 }

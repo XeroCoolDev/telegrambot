@@ -40,6 +40,9 @@ migrations_dir = "migrations"
 # Daily job (expiry + top-up reminders). Cron Triggers run in UTC — the Docker
 # build ran REMINDER_CRON in the container's TZ (Europe/London), so 09:00 local
 # is 09:00 UTC in winter and 08:00 UTC in summer.
+[observability]
+enabled = true            # Workers Logs: past invocations in the dashboard, 3-day retention on the free plan
+
 [triggers]
 crons = ["0 9 * * *"]
 

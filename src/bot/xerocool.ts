@@ -4,6 +4,7 @@ import * as xui from "../services/xui/index.js";
 import { isRateLimited } from "../services/rate-limit.js";
 import { notifyAdminPaymentSettled } from "../services/notifications.js";
 import { upsertInvoiceMessage } from "../services/invoice-message.js";
+import { runDailyTasks } from "../scheduler/daily.js";
 
 export function createXerocoolBot(db: AppDb) {
   const bot = new Bot(process.env.XEROCOOL_BOT_TOKEN!);
@@ -177,6 +178,21 @@ export function createXerocoolBot(db: AppDb) {
     } else {
       if (fresh) await upsertInvoiceMessage(bot, db, fresh, { status: "failed" });
       await ctx.reply(`❌ Failed to add credits for invoice \`${invoiceId}\`.`, { parse_mode: "Markdown" });
+    }
+  });
+
+  // ── /digest (admin only — dry-run the daily job, reply with its digest) ──
+  // Admin: run the daily job as a dry run and show its digest here, so the
+  // reminder logic can be checked without waiting for the cron or messaging
+  // any reseller.
+  bot.command("digest", async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) return;
+    try {
+      const { summary } = await runDailyTasks(db, bot, { dryRun: true });
+      await ctx.reply(summary, { parse_mode: "Markdown" });
+    } catch (err) {
+      console.error("[bot] /digest failed:", err);
+      await ctx.reply(`Digest failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 
